@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>업로드 · 기초번호판 보고 시스템</title>
+<link rel="icon" href="data:,">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div class="appbar">
+  <div class="titles">
+    <h1>업로드 · 데이터 관리</h1>
+    <div class="sub">매주 엑셀 업로드 → JSON 자동 변환·누적 저장</div>
+  </div>
+</div>
+
+<div class="content">
+
+  <div class="section-title">1. 엑셀 파일 업로드</div>
+  <div class="upload-card" id="dropZone">
+    <svg class="upload-emoji" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4 7 9M12 4l5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    <h2>주간/월간 보고 템플릿 파일을 업로드하세요</h2>
+    <p>「기초번호판_주간월간보고_템플릿.xlsx」 양식의 파일을 올리면<br>기준일자를 자동 인식해 해당 주차 데이터로 저장됩니다.</p>
+    <button class="btn" id="pickBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      엑셀 파일 선택
+    </button>
+    <div class="upload-note">또는 파일을 이 영역으로 끌어다 놓으세요 · 지원 형식 : .xlsx</div>
+    <input type="file" id="fileInput" accept=".xlsx,.xlsm">
+  </div>
+
+  <div id="previewCard" class="hidden">
+    <div class="section-title">2. 업로드 미리보기</div>
+    <div class="card card-pad">
+      <div class="field-row">
+        <div class="field"><label>인식된 기준일자</label><input id="prevBaseDate" disabled></div>
+        <div class="field"><label>파일명</label><input id="prevFileName" disabled></div>
+      </div>
+      <div class="kpi-grid" id="prevKpis" style="margin-top:6px;"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+        <button class="btn" id="saveLocalBtn" style="flex:1;min-width:160px;">이 기기에 저장 (로컬)</button>
+      </div>
+      <div class="note-box" style="margin-top:10px;">
+        "이 기기에 저장"을 누르면 즉시 <b>요약/보고/통계</b> 페이지에 반영됩니다.
+        다른 컴퓨터·팀원과 공유하려면 아래 3번에서 JSON을 내려받아 저장소(GitHub)의 <code>data/</code> 폴더에 커밋하세요.
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">3. 저장된 주차 데이터 관리</div>
+  <div class="card"><div class="table-wrap" id="weekTable"></div></div>
+
+  <div class="section-title">4. JSON 내보내기 (저장소 커밋용)</div>
+  <div class="card card-pad">
+    <p style="font-size:12px;color:var(--muted);line-height:1.7;margin:0 0 12px;">
+      GitHub Pages는 정적 호스팅이라 서버에 자동 저장이 되지 않습니다. 아래 버튼으로 JSON을 내려받아 저장소에 커밋하면
+      모든 기기·팀원이 같은 데이터를 보게 됩니다 (관리 구조는 하단 안내 참고).
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn outline sm" id="exportIndexBtn">data/index.json</button>
+      <button class="btn outline sm" id="exportLatestWeekBtn">최신 주차 weekly/{date}.json</button>
+      <button class="btn outline sm" id="exportAllWeeksBtn">전체 주차 weekly/*.json (개별 다운로드)</button>
+      <button class="btn outline sm" id="exportRegionBtn">시군구별 통합 JSON</button>
+      <button class="btn outline sm" id="exportVendorBtn">업체별 통합 JSON</button>
+    </div>
+  </div>
+
+  <div class="section-title">데이터 저장 구조 안내</div>
+  <div class="note-box">
+    <b>커밋 데이터</b> (저장소 <code>/data</code> 폴더, 모든 사람 공유)<br>
+    · <code>data/index.json</code> — 저장된 전체 주차 날짜 목록<br>
+    · <code>data/weekly/{기준일자}.json</code> — 해당 주차의 시군구별/점검결과/업체별 원본 스냅샷 (통합본)<br><br>
+    <b>로컬 데이터</b> (이 브라우저에만 저장, localStorage)<br>
+    · 방금 업로드했지만 아직 저장소에 커밋하지 않은 주차. 다른 기기에서는 보이지 않습니다.<br><br>
+    <b>시군구별 / 업체별 JSON</b>은 모든 저장된 주차 스냅샷을 모아 지역·업체 단위 시계열로 재구성한 파생 자료입니다.
+    화면(요약/보고/통계)은 이 파일을 읽지 않고 <code>weekly/*.json</code>에서 매번 직접 계산하므로,
+    이 두 파일은 외부 공유·엑셀 분석용으로만 사용하면 됩니다.
+  </div>
+
+</div>
+
+<div class="tabbar" id="tabbar"></div>
+
+<script src="assets/app.js"></script>
+<script>
+renderNav('upload');
+let PENDING = null;
+
+function showPreview(snap) {
+  PENDING = snap;
+  $('#previewCard').classList.remove('hidden');
+  $('#prevBaseDate').value = snap.baseDate;
+  $('#prevFileName').value = snap.fileName;
+  const t = totals(snap.regions);
+  $('#prevKpis').innerHTML = [
+    kpiCard('대상 시군구', t.count+'개'),
+    kpiCard('전체 대상건수', fmt(t.target)),
+    kpiCard('누적 점검건수', fmt(t.cumulative)),
+    kpiCard('진도율', pct(t.progress)),
+  ].join('');
+}
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const snap = Parser.parse(e.target.result, file.name);
+      if (!snap) { alert('「시군구별_진도현황」 시트를 찾을 수 없습니다. 템플릿 양식을 확인해주세요.'); return; }
+      showPreview(snap);
+    } catch (err) {
+      console.error(err);
+      alert('파일을 읽는 중 오류가 발생했습니다. 올바른 .xlsx 파일인지 확인해주세요.');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+$('#pickBtn').addEventListener('click', ()=> $('#fileInput').click());
+$('#fileInput').addEventListener('change', e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
+const dz = $('#dropZone');
+['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('drag');}));
+dz.addEventListener('drop', e=>{ const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
+
+$('#saveLocalBtn').addEventListener('click', async ()=>{
+  if (!PENDING) return;
+  LocalStore.saveWeek(PENDING);
+  alert(`${PENDING.baseDate} 주차 데이터가 이 기기에 저장되었습니다.`);
+  PENDING = null;
+  $('#previewCard').classList.add('hidden');
+  await refreshWeekTable();
+});
+
+/* ---- 저장된 주차 목록 ---- */
+async function refreshWeekTable() {
+  const weeks = await DataLayer.listAllWeeks();
+  if (weeks.length===0) {
+    $('#weekTable').innerHTML = `<div class="empty">아직 저장된 주차가 없습니다</div>`;
+    return;
+  }
+  $('#weekTable').innerHTML = `<table class="dt"><thead><tr>
+      <th>기준일자</th><th>대상건수</th><th>누적점검</th><th>진도율</th><th>상태</th><th>관리</th>
+    </tr></thead><tbody>
+    ${(await Promise.all(weeks.map(async w=>{
+      const snap = await DataLayer.getWeek(w.date);
+      const t = snap ? totals(snap.regions) : {target:0,cumulative:0,progress:0};
+      const badge = w.source==='committed' ? '<span class="badge ok">저장소 커밋됨</span>'
+                  : w.source==='both' ? '<span class="badge ok">커밋됨+로컬수정</span>'
+                  : '<span class="badge warn">로컬에만 저장</span>';
+      const delBtn = (w.source==='local'||w.source==='both') ? `<button class="btn ghost" data-del="${w.date}">로컬삭제</button>` : '-';
+      return `<tr><td>${w.date}</td><td>${fmt(t.target)}</td><td>${fmt(t.cumulative)}</td><td>${pct(t.progress)}</td><td>${badge}</td><td>${delBtn}</td></tr>`;
+    }))).join('')}
+    </tbody></table>`;
+  $$('#weekTable [data-del]').forEach(b=>b.addEventListener('click', async ()=>{
+    if (confirm(`${b.dataset.del} 주차의 로컬 저장 데이터를 삭제할까요? (저장소에 커밋된 데이터는 영향 없음)`)) {
+      LocalStore.deleteWeek(b.dataset.del);
+      await refreshWeekTable();
+    }
+  }));
+}
+
+/* ---- export ---- */
+$('#exportIndexBtn').addEventListener('click', async ()=>{
+  const weeks = await DataLayer.listAllWeeks();
+  downloadJSON({ weeks: weeks.map(w=>w.date) }, 'index.json');
+});
+$('#exportLatestWeekBtn').addEventListener('click', async ()=>{
+  const weeks = await DataLayer.listAllWeeks();
+  if (weeks.length===0) { alert('저장된 데이터가 없습니다.'); return; }
+  const date = weeks[weeks.length-1].date;
+  const snap = await DataLayer.getWeek(date);
+  downloadJSON(snap, `${date}.json`);
+});
+$('#exportAllWeeksBtn').addEventListener('click', async ()=>{
+  const weeks = await DataLayer.listAllWeeks();
+  if (weeks.length===0) { alert('저장된 데이터가 없습니다.'); return; }
+  for (const w of weeks) {
+    const snap = await DataLayer.getWeek(w.date);
+    if (snap) downloadJSON(snap, `${w.date}.json`);
+  }
+  alert(`${weeks.length}개 주차 파일이 다운로드 폴더에 저장되었습니다. data/weekly/ 폴더에 옮겨 커밋하세요.`);
+});
+$('#exportRegionBtn').addEventListener('click', async ()=>{
+  const weeks = await DataLayer.listAllWeeks();
+  const out = {};
+  for (const w of weeks) {
+    const snap = await DataLayer.getWeek(w.date);
+    if (!snap) continue;
+    snap.regions.forEach(r=>{
+      const key = `${r.sido} ${r.sigungu}`;
+      if (!out[key]) out[key] = [];
+      out[key].push({ baseDate: snap.baseDate, vendor:r.vendor, target:r.target, cumulative:r.cumulative,
+        thisWeek:r.thisWeek, progress:r.progress, remain:r.remain, normal:r.normal, damage:r.damage, lost:r.lost });
+    });
+  }
+  if (Object.keys(out).length===0) { alert('저장된 데이터가 없습니다.'); return; }
+  downloadJSON(out, `시군구별_통합_${new Date().toISOString().slice(0,10)}.json`);
+});
+$('#exportVendorBtn').addEventListener('click', async ()=>{
+  const weeks = await DataLayer.listAllWeeks();
+  const out = {};
+  for (const w of weeks) {
+    const snap = await DataLayer.getWeek(w.date);
+    if (!snap) continue;
+    byVendorFromRegions(snap.regions).forEach(v=>{
+      if (!out[v.name]) out[v.name] = [];
+      out[v.name].push({ baseDate: snap.baseDate, regionCount:v.count, target:v.target, cumulative:v.cumulative, progress:v.progress });
+    });
+  }
+  if (Object.keys(out).length===0) { alert('저장된 데이터가 없습니다.'); return; }
+  downloadJSON(out, `업체별_통합_${new Date().toISOString().slice(0,10)}.json`);
+});
+
+refreshWeekTable();
+</script>
+</body>
+</html>

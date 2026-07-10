@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>통계 · 기초번호판 보고 시스템</title>
+<link rel="icon" href="data:,">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div class="appbar">
+  <div class="titles">
+    <h1>통계</h1>
+    <div class="sub" id="appSub">불러오는 중…</div>
+  </div>
+  <div class="weeksel"><select id="weekSelect"></select></div>
+</div>
+
+<div class="content">
+  <div id="emptyState" class="hidden">
+    <div class="card card-pad" style="text-align:center;">
+      <div class="empty">아직 업로드된 데이터가 없습니다.</div>
+      <a class="btn" href="upload.html" style="margin-top:6px;">업로드 페이지로 이동</a>
+    </div>
+  </div>
+
+  <div id="dataState" class="hidden">
+    <div class="subtabs">
+      <button data-mode="stats" class="active">점검결과통계</button>
+      <button data-mode="vendor">업체별현황</button>
+      <button data-mode="search">조회 · 검색</button>
+    </div>
+
+    <!-- 점검결과통계 -->
+    <section id="mode-stats">
+      <div class="section-title">시군구별 점검결과 및 조치현황</div>
+      <div class="card"><div class="table-wrap" id="statsTable"></div></div>
+    </section>
+
+    <!-- 업체별현황 -->
+    <section id="mode-vendor" class="hidden">
+      <div class="section-title">컨소시엄 업체별 배정 현황 <span class="tag">업체별_배정현황 시트 기준</span></div>
+      <div class="region-list" id="vendorList"></div>
+
+      <div class="section-title">담당업체별 자동집계 <span class="tag">시군구별_진도현황 기준</span></div>
+      <div class="card"><div class="table-wrap" id="vendorAutoTable"></div></div>
+    </section>
+
+    <!-- 조회/검색 -->
+    <section id="mode-search" class="hidden">
+      <div class="searchbox">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="searchInput" placeholder="시군구명 또는 담당업체로 검색">
+      </div>
+      <div class="chiprow" id="sidoChips"></div>
+      <div class="sortbar">
+        <button data-sort="default" class="active">기본순</button>
+        <button data-sort="progressAsc">진도율 낮은순</button>
+        <button data-sort="remainDesc">잔여건수 많은순</button>
+      </div>
+      <div class="region-list" id="searchList"></div>
+    </section>
+  </div>
+</div>
+
+<div class="tabbar" id="tabbar"></div>
+
+<script src="assets/app.js"></script>
+<script>
+renderNav('stats');
+let SNAP = null;
+let filter = { sido:'전체', search:'', sort:'default' };
+
+function renderStatsTable(snap) {
+  if (!snap.stats || snap.stats.length===0) {
+    $('#statsTable').innerHTML = `<div class="empty">「점검결과통계」 시트에 입력된 데이터가 없습니다</div>`;
+    return;
+  }
+  $('#statsTable').innerHTML = `<table class="dt"><thead><tr>
+      <th>시도</th><th>시군구</th><th>점검율</th><th>훼손율</th><th>점검계</th><th>정상</th><th>훼손</th><th>망실</th>
+      <th>기조치(보수)</th><th>기조치(교체)</th><th>조치필요</th><th>조치율</th>
+    </tr></thead><tbody>
+    ${snap.stats.map(s=>`<tr>
+      <td>${s.sido}</td><td class="left">${s.sigungu}</td><td>${pct(s.inspectRate)}</td><td>${pct(s.damageRate)}</td>
+      <td>${fmt(s.total)}</td><td>${fmt(s.normal)}</td><td>${fmt(s.damage)}</td><td>${fmt(s.lost)}</td>
+      <td>${fmt(s.fixedRepair)}</td><td>${fmt(s.fixedReplace)}</td><td>${fmt(s.needAction)}</td><td>${pct(s.actionRate)}</td>
+    </tr>`).join('')}
+    </tbody></table>`;
+}
+
+function renderVendor(snap) {
+  if (!snap.vendors || snap.vendors.length===0) {
+    $('#vendorList').innerHTML = `<div class="empty">「업체별_배정현황」 시트에 입력된 데이터가 없습니다</div>`;
+  } else {
+    $('#vendorList').innerHTML = snap.vendors.map(v=>`
+      <div class="region-card">
+        <div class="top"><div class="nm">${v.name}</div><div class="co">${v.count||'-'}개 시군구</div></div>
+        <div class="stats" style="margin-top:6px;"><div style="flex:none;width:100%;color:var(--muted);font-size:11px;">${v.area||'담당 시군구 미입력'}</div></div>
+        <div class="stats"><div>배정 <b>${fmt(v.target)}</b></div><div>누적 <b>${fmt(v.cumulative)}</b></div></div>
+        <div class="pbar"><i style="width:${Math.min(pctNum(v.progress),100).toFixed(1)}%"></i></div>
+        <div class="pct">${pct(v.progress)}</div>
+      </div>`).join('');
+  }
+  const auto = byVendorFromRegions(snap.regions);
+  $('#vendorAutoTable').innerHTML = `<table class="dt"><thead><tr>
+      <th>담당업체</th><th>담당 시군구수</th><th>대상건수</th><th>누적점검</th><th>진도율</th>
+    </tr></thead><tbody>
+    ${auto.map(v=>`<tr><td class="left">${v.name}</td><td>${v.count}</td><td>${fmt(v.target)}</td><td>${fmt(v.cumulative)}</td><td>${pct(v.progress)}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+
+function renderSidoChips(regions) {
+  const sidos = ['전체', ...new Set(regions.map(r=>r.sido))];
+  $('#sidoChips').innerHTML = sidos.map(s=>`<button class="chip ${s===filter.sido?'active':''}" data-sido="${s}">${s}</button>`).join('');
+  $$('#sidoChips .chip').forEach(b=>b.addEventListener('click', ()=>{ filter.sido=b.dataset.sido; renderSearch(); }));
+}
+
+function renderSearch() {
+  if (!SNAP) return;
+  let list = SNAP.regions.filter(r=>{
+    if (filter.sido!=='전체' && r.sido!==filter.sido) return false;
+    if (filter.search) {
+      const q = filter.search;
+      if (!r.sigungu.includes(q) && !(r.vendor||'').includes(q)) return false;
+    }
+    return true;
+  });
+  if (filter.sort==='progressAsc') list = [...list].sort((a,b)=>a.progress-b.progress);
+  if (filter.sort==='remainDesc') list = [...list].sort((a,b)=>b.remain-a.remain);
+
+  $('#searchList').innerHTML = list.map(r=>`
+    <div class="region-card">
+      <div class="top">
+        <div class="nm"><span>${r.sido}</span>${r.sigungu}</div>
+        <div class="co">${r.vendor || '미배정'}</div>
+      </div>
+      <div class="stats">
+        <div>대상 <b>${fmt(r.target)}</b></div><div>누적 <b>${fmt(r.cumulative)}</b></div>
+        <div>금주 <b>${fmt(r.thisWeek)}</b></div><div>잔여 <b>${fmt(r.remain)}</b></div>
+      </div>
+      <div class="pbar"><i style="width:${Math.min(pctNum(r.progress),100).toFixed(1)}%"></i></div>
+      <div class="pct">${pct(r.progress)} ${statusBadge(r)}</div>
+    </div>`).join('') || `<div class="empty">조건에 맞는 지역이 없습니다</div>`;
+}
+
+$$('.subtabs button').forEach(b=>b.addEventListener('click', ()=>{
+  $$('.subtabs button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  const mode = b.dataset.mode;
+  ['stats','vendor','search'].forEach(m=> $('#mode-'+m).classList.toggle('hidden', m!==mode));
+}));
+$('#searchInput').addEventListener('input', e=>{ filter.search=e.target.value.trim(); renderSearch(); });
+$$('.sortbar button').forEach(b=>b.addEventListener('click', ()=>{
+  $$('.sortbar button').forEach(x=>x.classList.remove('active')); b.classList.add('active');
+  filter.sort = b.dataset.sort; renderSearch();
+}));
+
+async function loadDate(date) {
+  const snap = await DataLayer.getWeek(date);
+  if (!snap) return;
+  SNAP = snap;
+  $('#appSub').textContent = `${snap.fileName||''} · 기준일자 ${snap.baseDate}`;
+  renderStatsTable(snap); renderVendor(snap); renderSidoChips(snap.regions); renderSearch();
+}
+
+(async function init(){
+  const sel = $('#weekSelect');
+  const { weeks, current } = await buildWeekSelector(sel, loadDate);
+  if (weeks.length===0) { $('#emptyState').classList.remove('hidden'); return; }
+  $('#dataState').classList.remove('hidden');
+  await loadDate(current);
+})();
+</script>
+</body>
+</html>
