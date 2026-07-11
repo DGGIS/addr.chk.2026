@@ -45,9 +45,16 @@ const GitHubCommit = {
   },
 
   async commitWeek(date, master) {
-    const weeks = LocalStore.listWeeks();
+    // GitHub 기존 index.json과 로컬 목록을 합쳐서 누락 없이 저장
+    let ghWeeks = [];
+    try {
+      const existing = await this.getFile('data/index.json');
+      if (existing?.content?.weeks) ghWeeks = existing.content.weeks;
+    } catch(e) {}
+    const localWeeks = LocalStore.listWeeks();
+    const merged = [...new Set([...ghWeeks, ...localWeeks, date])].sort();
     await this.putFile(`data/weekly/${date}.json`, master, `chore: ${date} 주차 데이터 업로드`);
-    await this.putFile('data/index.json', { weeks }, `chore: index.json 갱신 (${date})`);
+    await this.putFile('data/index.json', { weeks: merged }, `chore: index.json 갱신 (${date} 추가)`);
   }
 };
 
