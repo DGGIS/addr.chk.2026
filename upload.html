@@ -95,6 +95,28 @@
     <div id="templateLinks" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
   </div>
 
+  <!-- KAIS 파일 업로드 -->
+  <div class="section-title">KAIS 설치현황 파일 업로드 <span class="tag">정상/훼손/망실 자동 집계</span></div>
+  <div class="card card-pad">
+    <p style="font-size:12px;color:var(--muted);line-height:1.7;margin:0 0 12px;">
+      KAIS 시스템에서 받은 「기초번호판_설치현황_YYYYMMDD.xlsx」 파일을 올리면<br>
+      시군구별 <b>정상/훼손/망실</b> 건수를 자동으로 집계해 해당 주차 데이터에 반영합니다.
+    </p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button class="btn outline" id="pickKaisBtn" style="flex:none;">KAIS 파일 선택</button>
+      <input type="file" id="kaisFileInput" accept=".xlsx" style="display:none;">
+      <span id="kaisStatus" style="font-size:12px;color:var(--muted);"></span>
+    </div>
+    <div id="kaisPreview" class="hidden" style="margin-top:12px;">
+      <div class="kpi-grid" id="kaisKpis"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <select id="kaisWeekSelect" style="flex:1;padding:9px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;"></select>
+        <button class="btn" id="applyKaisBtn" style="flex:none;">이 주차에 반영</button>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin:8px 0 0;">※ 적용할 주차를 선택 후 반영하세요. 기존 정상/훼손/망실 값이 교체됩니다.</p>
+    </div>
+  </div>
+
 </div>
 
 <div class="tabbar" id="tabbar"></div>
@@ -189,32 +211,50 @@ function handleFile(file) {
 
 function parseCompanyTemplate(buf, company, dateStr, fileName) {
   const wb = XLSX.read(buf, {type:'array', raw:true});
-  const ws = wb.Sheets['주간실적입력'];
-  if (!ws) return null;
-  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true});
-  // 헤더는 row 6 (index 5), 데이터는 row 7~ (index 6~)
-  const hdr = (aoa[5]||[]).map(c=>c==null?'':String(c).trim());
-  const idxSido = hdr.indexOf('시도');
-  const idxSigungu = hdr.indexOf('시군구');
+
+  // 시트 1: 주간보고내용 (텍스트)
+  let reportText = { reporter:'', weeklyWork:'', plan:'', note:'' };
+  const ws1 = wb.Sheets['주간보고내용'];
+  if (ws1) {
+    const a = XLSX.utils.sheet_to_json(ws1, {header:1, defval:null, raw:true});
+    // row2=보고자(B2), row3=기준일자(B3), row4=보고기간(B4)
+    // row8=금주실적 헤더, row9~12=내용, row14=추진계획, row15~19=내용, row20=기타, row21~=내용
+    const getCell = (r,c) => (a[r]||[])[c];
+    reportText.reporter   = getCell(1,1) || '';
+    reportText.weeklyWork = getCell(8,0) || '';
+    reportText.plan       = getCell(13,0) || '';
+    reportText.note       = getCell(19,0) || '';
+  }
+
+  // 시트 2: 주간실적입력 (숫자)
+  const ws2 = wb.Sheets['주간실적입력'];
+  if (!ws2) return null;
+  const aoa = XLSX.utils.sheet_to_json(ws2, {header:1, defval:null, raw:true});
+  const hdr = (aoa[3]||[]).map(c=>c==null?'':String(c).trim());
+  const idxSido   = hdr.indexOf('시도');
+  const idxSigungu= hdr.indexOf('시군구');
   const idxTarget = hdr.indexOf('전체대상건수');
-  const idxThis = hdr.indexOf('금주점검건수');
-  const idxNormal = hdr.indexOf('정상');
-  const idxDamage = hdr.indexOf('훼손');
-  const idxLost = hdr.indexOf('망실');
-  if (idxSido<0 || idxSigungu<0) return null;
+  const idxThis   = hdr.indexOf('금주점검건수');
+  if (idxSido<0||idxSigungu<0) return null;
+
   const regions = [];
-  for (let r=6; r<aoa.length; r++) {
+  for (let r=4; r<aoa.length; r++) {
     const row = aoa[r]; if (!row) continue;
-    const sido = row[idxSido]; if (!sido || String(sido).includes('합')) continue;
+    const sido = row[idxSido];
+    if (!sido || String(sido).includes('합')) continue;
     regions.push({
-      sido: String(sido), sigungu: String(row[idxSigungu]||''),
-      target: parseFloat(row[idxTarget])||0, thisWeek: parseFloat(row[idxThis])||0,
-      normal: parseFloat(row[idxNormal])||0, damage: parseFloat(row[idxDamage])||0,
-      lost: parseFloat(row[idxLost])||0,
+      sido: String(sido).trim(),
+      sigungu: String(row[idxSigungu]||'').trim(),
+      target: parseFloat(row[idxTarget])||0,
+      thisWeek: parseFloat(row[idxThis])||0,  // 0이어도 OK
+      normal:0, damage:0, lost:0,
     });
   }
+  if (!regions.length) return null;
+
   const {start, end} = getWeekPeriod(dateStr);
-  return { company, dateStr, weekStart:start, weekEnd:end, fileName, uploadedAt:new Date().toISOString(), regions };
+  return { company, dateStr, weekStart:start, weekEnd:end, fileName,
+           uploadedAt:new Date().toISOString(), reportText, regions };
 }
 
 function showPreview(snap) {
@@ -433,6 +473,113 @@ async function renderTemplateLinks() {
     <a href="templates/[${c.name}]기초번호판설치점검_주간보고_템플릿.xlsx" download class="btn outline sm" style="min-width:140px;text-decoration:none;">${c.name}</a>
   `).join('');
 }
+
+// ---- KAIS 파일 파싱 ----
+let KAIS_DATA = null;
+
+function parseKaisFile(buf) {
+  const wb = XLSX.read(buf, {type:'array', raw:true});
+  const wsName = wb.SheetNames.find(n=>n.includes('설치현황')) || wb.SheetNames[0];
+  const ws = wb.Sheets[wsName];
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true});
+
+  // 헤더 탐색 (행정구역, 점검진행상태 포함 행 찾기)
+  let hdrIdx = -1;
+  for (let i=0;i<aoa.length;i++) {
+    const row = (aoa[i]||[]).map(c=>c==null?'':String(c));
+    if (row.includes('행정구역') && row.some(c=>c.includes('점검'))) { hdrIdx=i; break; }
+  }
+  if (hdrIdx<0) return null;
+
+  // 2행 헤더 합치기 (row hdrIdx + hdrIdx+1)
+  const h1 = (aoa[hdrIdx]||[]).map(c=>c==null?'':String(c).trim());
+  const h2 = (aoa[hdrIdx+1]||[]).map(c=>c==null?'':String(c).trim());
+
+  const colArea   = h1.indexOf('행정구역');
+  // 점검진행상태 찾기
+  let colStatus = -1;
+  for (let i=0;i<h2.length;i++) { if (h2[i].includes('점검진행상태')||h1[i].includes('점검진행상태')) {colStatus=i;break;} }
+  if (colArea<0) return null;
+
+  // 시군구별 집계
+  const map = {};
+  for (let r=hdrIdx+2; r<aoa.length; r++) {
+    const row = aoa[r]; if (!row||!row[colArea]) continue;
+    const sigungu = String(row[colArea]).trim();
+    if (!map[sigungu]) map[sigungu] = {total:0, done:0, normal:0, damage:0, lost:0};
+    map[sigungu].total++;
+    const status = colStatus>=0 ? String(row[colStatus]||'') : '';
+    if (status.includes('점검')) map[sigungu].done++;
+    if (status.includes('정상')) map[sigungu].normal++;
+    else if (status.includes('훼손')) map[sigungu].damage++;
+    else if (status.includes('망실')) map[sigungu].lost++;
+  }
+  return map;
+}
+
+function handleKaisFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = parseKaisFile(e.target.result);
+      if (!data || !Object.keys(data).length) {
+        $('#kaisStatus').textContent = '❌ 파일을 읽을 수 없습니다. KAIS 설치현황 파일인지 확인하세요.';
+        return;
+      }
+      KAIS_DATA = data;
+      const regions = Object.keys(data).length;
+      const total = Object.values(data).reduce((a,v)=>a+v.total,0);
+      const done  = Object.values(data).reduce((a,v)=>a+v.done,0);
+      $('#kaisStatus').textContent = `✅ ${file.name} (${regions}개 지역, ${total.toLocaleString()}건)`;
+      $('#kaisKpis').innerHTML = [
+        kpiCard('집계 지역수', regions+'개'),
+        kpiCard('전체 건수', total.toLocaleString()),
+        kpiCard('점검완료', done.toLocaleString(), 'ok'),
+        kpiCard('점검율', total?((done/total)*100).toFixed(1)+'%':'0%'),
+      ].join('');
+      // 주차 선택 드롭다운 채우기
+      const weeks = LocalStore.listWeeks();
+      const sel = $('#kaisWeekSelect');
+      if (weeks.length) {
+        sel.innerHTML = weeks.map(w=>`<option value="${w}">${w}</option>`).join('');
+        sel.value = weeks[weeks.length-1];
+      } else {
+        sel.innerHTML = `<option value="">저장된 주차 없음</option>`;
+      }
+      $('#kaisPreview').classList.remove('hidden');
+    } catch(err) {
+      console.error(err);
+      $('#kaisStatus').textContent = '❌ 파싱 오류: '+err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+$('#pickKaisBtn').addEventListener('click', ()=>$('#kaisFileInput').click());
+$('#kaisFileInput').addEventListener('change', e=>{ if(e.target.files[0]) handleKaisFile(e.target.files[0]); });
+
+$('#applyKaisBtn').addEventListener('click', ()=>{
+  if (!KAIS_DATA) return;
+  const date = $('#kaisWeekSelect').value;
+  if (!date) { alert('적용할 주차를 선택하세요.'); return; }
+  const master = LocalStore.getMasterWeek(date);
+  if (!master) { alert('해당 주차 데이터가 없습니다. 먼저 주간실적 파일을 업로드하세요.'); return; }
+  let updated = 0;
+  master.regions.forEach(r => {
+    const kd = KAIS_DATA[r.sigungu];
+    if (kd) {
+      r.normal = kd.normal; r.damage = kd.damage; r.lost = kd.lost;
+      updated++;
+    }
+  });
+  master.uploadedAt = new Date().toISOString();
+  LocalStore.saveMasterWeek(date, master);
+  $('#kaisPreview').classList.add('hidden');
+  $('#kaisStatus').textContent = `✅ ${date} 주차에 정상/훼손/망실 반영 완료 (${updated}개 지역 갱신)`;
+  KAIS_DATA = null;
+  renderWeekHistory();
+  alert(`${updated}개 지역의 정상/훼손/망실 데이터가 반영되었습니다.`);
+});
 
 // ---- 초기화 ----
 (async function init(){
