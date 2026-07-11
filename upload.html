@@ -51,7 +51,7 @@
     </div>
     <div id="patInputView">
       <p style="font-size:12px;color:var(--muted);line-height:1.7;margin:0 0 10px;">
-        GitHub Personal Access Token(PAT)을 등록하면 파일 업로드 시 <b>자동으로 GitHub에 커밋</b>되어 팀원 전체가 즉시 확인할 수 있습니다.<br>
+        GitHub Personal Access Token(PAT)을 등록하면 파일 업로드 시 <b>자동으로 GitHub에 커밋</b>되어 전체가 즉시 확인할 수 있습니다.<br>
         토큰은 이 기기(브라우저)에만 저장되며 외부로 전송되지 않습니다.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -93,23 +93,12 @@
   </div>
 
   <!-- 주차별 현황 + 롤백 -->
-  <div class="section-title">저장된 주차별 현황 <span class="tag">업체별 상세 · 롤백 가능</span></div>
+  <div class="section-title">주차별 업로드 이력 <span class="tag">누적 저장 · 롤백 가능</span></div>
+  <div class="note-box" style="margin-bottom:10px;">
+    매주 업로드할 때마다 이력이 쌓입니다. <b>보고 내용이 이전 데이터로 보이면</b> 해당 주차 <b>"로컬삭제"</b> 후 재업로드하세요.
+  </div>
   <div class="card" id="weekHistoryCard">
     <div class="empty">불러오는 중…</div>
-  </div>
-
-  <!-- 내보내기 -->
-  <div class="section-title">JSON 내보내기 (공유용)</div>
-  <div class="card card-pad">
-    <p style="font-size:12px;color:var(--muted);line-height:1.7;margin:0 0 12px;">
-      다른 사람과 공유하려면 JSON을 내려받아 GitHub 레포 <code>data/</code> 폴더에 커밋하세요.
-    </p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn outline sm" id="exportIndexBtn">data/index.json</button>
-      <button class="btn outline sm" id="exportLatestBtn">최신 주차 JSON</button>
-      <button class="btn outline sm" id="exportByRegionBtn">시군구별 통합</button>
-      <button class="btn outline sm" id="exportByVendorBtn">업체별 통합</button>
-    </div>
   </div>
 
   <!-- 템플릿 다운로드 -->
