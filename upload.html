@@ -8,77 +8,91 @@
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+.co-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;}
+@media(min-width:600px){.co-grid{grid-template-columns:repeat(3,1fr);}}
+.co-card{background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:11px 12px;}
+.co-card.done{border-color:var(--green);}
+.co-card.missing{border-color:#E4E8EE;}
+.co-name{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:4px;}
+.co-status{font-size:11px;font-weight:700;}
+.co-status.done{color:var(--green);}
+.co-status.missing{color:var(--muted);}
+.co-time{font-size:10px;color:var(--muted);margin-top:2px;}
+.co-card.done .co-name::before{content:"✅ ";}
+.co-card.missing .co-name::before{content:"⏳ ";}
+.rollback-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);}
+.rollback-row:last-child{border-bottom:none;}
+.period-tag{font-size:11px;background:var(--lblue);color:var(--navy);font-weight:700;padding:3px 8px;border-radius:6px;flex:none;}
+</style>
 </head>
 <body>
-
 <div class="appbar">
   <div class="titles">
     <h1>업로드 · 데이터 관리</h1>
-    <div class="sub">매주 엑셀 업로드 → JSON 자동 변환·누적 저장</div>
+    <div class="sub" id="appSub">주간 실적 파일을 업로드하세요</div>
   </div>
 </div>
 
 <div class="content">
 
-  <div class="section-title">1. 엑셀 파일 업로드</div>
+  <!-- 이번 주 업로드 현황 -->
+  <div class="section-title">이번 주 업로드 현황 <span class="tag" id="currentWeekTag">-</span></div>
+  <div class="co-grid" id="companyStatusGrid"></div>
+
+  <!-- 업로드 -->
+  <div class="section-title">파일 업로드</div>
   <div class="upload-card" id="dropZone">
     <svg class="upload-emoji" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4 7 9M12 4l5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-    <h2>주간/월간 보고 템플릿 파일을 업로드하세요</h2>
-    <p>「기초번호판_주간월간보고_템플릿.xlsx」 양식의 파일을 올리면<br>기준일자를 자동 인식해 해당 주차 데이터로 저장됩니다.</p>
-    <button class="btn" id="pickBtn">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      엑셀 파일 선택
-    </button>
-    <div class="upload-note">또는 파일을 이 영역으로 끌어다 놓으세요 · 지원 형식 : .xlsx</div>
-    <input type="file" id="fileInput" accept=".xlsx,.xlsm">
+    <h2>업체별 주간 실적 파일을 업로드하세요</h2>
+    <p>파일명 형식: <b>[업체명]기초번호판설치점검_주간보고_YYYYMMDD.xlsx</b><br>날짜는 <b>매주 목요일</b> 날짜로 저장하세요.</p>
+    <button class="btn" id="pickBtn">엑셀 파일 선택</button>
+    <div class="upload-note">또는 이 영역으로 드래그&드롭</div>
+    <input type="file" id="fileInput" accept=".xlsx">
   </div>
 
+  <!-- 미리보기 -->
   <div id="previewCard" class="hidden">
-    <div class="section-title">2. 업로드 미리보기</div>
+    <div class="section-title">업로드 미리보기</div>
     <div class="card card-pad">
       <div class="field-row">
-        <div class="field"><label>인식된 기준일자</label><input id="prevBaseDate" disabled></div>
-        <div class="field"><label>파일명</label><input id="prevFileName" disabled></div>
+        <div class="field"><label>인식된 업체명</label><input id="prevCompany" disabled></div>
+        <div class="field"><label>기준일자 (목요일)</label><input id="prevDate" disabled></div>
+        <div class="field"><label>보고기간</label><input id="prevPeriod" disabled></div>
       </div>
       <div class="kpi-grid" id="prevKpis" style="margin-top:6px;"></div>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
-        <button class="btn" id="saveLocalBtn" style="flex:1;min-width:160px;">이 기기에 저장 (로컬)</button>
+        <button class="btn" id="saveBtn" style="flex:1;min-width:160px;">이 기기에 저장</button>
+        <button class="btn outline" id="cancelBtn" style="flex:1;min-width:100px;">취소</button>
       </div>
-      <div class="note-box" style="margin-top:10px;">
-        "이 기기에 저장"을 누르면 즉시 <b>요약/보고/통계</b> 페이지에 반영됩니다.
-        다른 컴퓨터·팀원과 공유하려면 아래 3번에서 JSON을 내려받아 저장소(GitHub)의 <code>data/</code> 폴더에 커밋하세요.
-      </div>
+      <div id="saveStatus" style="margin-top:10px;display:none;" class="note-box"></div>
     </div>
   </div>
 
-  <div class="section-title">3. 저장된 주차 데이터 관리</div>
-  <div class="card"><div class="table-wrap" id="weekTable"></div></div>
+  <!-- 주차별 현황 + 롤백 -->
+  <div class="section-title">저장된 주차별 현황 <span class="tag">업체별 상세 · 롤백 가능</span></div>
+  <div class="card" id="weekHistoryCard">
+    <div class="empty">불러오는 중…</div>
+  </div>
 
-  <div class="section-title">4. JSON 내보내기 (저장소 커밋용)</div>
+  <!-- 내보내기 -->
+  <div class="section-title">JSON 내보내기 (공유용)</div>
   <div class="card card-pad">
     <p style="font-size:12px;color:var(--muted);line-height:1.7;margin:0 0 12px;">
-      GitHub Pages는 정적 호스팅이라 서버에 자동 저장이 되지 않습니다. 아래 버튼으로 JSON을 내려받아 저장소에 커밋하면
-      모든 기기·팀원이 같은 데이터를 보게 됩니다 (관리 구조는 하단 안내 참고).
+      다른 사람과 공유하려면 JSON을 내려받아 GitHub 레포 <code>data/</code> 폴더에 커밋하세요.
     </p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn outline sm" id="exportIndexBtn">data/index.json</button>
-      <button class="btn outline sm" id="exportLatestWeekBtn">최신 주차 weekly/{date}.json</button>
-      <button class="btn outline sm" id="exportAllWeeksBtn">전체 주차 weekly/*.json (개별 다운로드)</button>
-      <button class="btn outline sm" id="exportRegionBtn">시군구별 통합 JSON</button>
-      <button class="btn outline sm" id="exportVendorBtn">업체별 통합 JSON</button>
+      <button class="btn outline sm" id="exportLatestBtn">최신 주차 JSON</button>
+      <button class="btn outline sm" id="exportByRegionBtn">시군구별 통합</button>
+      <button class="btn outline sm" id="exportByVendorBtn">업체별 통합</button>
     </div>
   </div>
 
-  <div class="section-title">데이터 저장 구조 안내</div>
-  <div class="note-box">
-    <b>커밋 데이터</b> (저장소 <code>/data</code> 폴더, 모든 사람 공유)<br>
-    · <code>data/index.json</code> — 저장된 전체 주차 날짜 목록<br>
-    · <code>data/weekly/{기준일자}.json</code> — 해당 주차의 시군구별/점검결과/업체별 원본 스냅샷 (통합본)<br><br>
-    <b>로컬 데이터</b> (이 브라우저에만 저장, localStorage)<br>
-    · 방금 업로드했지만 아직 저장소에 커밋하지 않은 주차. 다른 기기에서는 보이지 않습니다.<br><br>
-    <b>시군구별 / 업체별 JSON</b>은 모든 저장된 주차 스냅샷을 모아 지역·업체 단위 시계열로 재구성한 파생 자료입니다.
-    화면(요약/보고/통계)은 이 파일을 읽지 않고 <code>weekly/*.json</code>에서 매번 직접 계산하므로,
-    이 두 파일은 외부 공유·엑셀 분석용으로만 사용하면 됩니다.
+  <!-- 템플릿 다운로드 -->
+  <div class="section-title">업체별 입력 템플릿 다운로드</div>
+  <div class="card card-pad">
+    <div id="templateLinks" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
   </div>
 
 </div>
@@ -87,135 +101,347 @@
 
 <script src="assets/app.js"></script>
 <script>
-renderNav('upload');
+let CONFIG = null;
 let PENDING = null;
 
-function showPreview(snap) {
-  PENDING = snap;
-  $('#previewCard').classList.remove('hidden');
-  $('#prevBaseDate').value = snap.baseDate;
-  $('#prevFileName').value = snap.fileName;
-  const t = totals(snap.regions);
-  $('#prevKpis').innerHTML = [
-    kpiCard('대상 시군구', t.count+'개'),
-    kpiCard('전체 대상건수', fmt(t.target)),
-    kpiCard('누적 점검건수', fmt(t.cumulative)),
-    kpiCard('진도율', pct(t.progress)),
-  ].join('');
+// ---- 요일·날짜 헬퍼 ----
+function getWeekPeriod(thursdayStr) {
+  // 목요일 → 금주 금요일(전주) ~ 목요일
+  const thu = new Date(thursdayStr);
+  const fri = new Date(thu); fri.setDate(thu.getDate() - 6);
+  const fmt = d => d.toISOString().slice(0,10);
+  return { start: fmt(fri), end: fmt(thu) };
+}
+function parseFilename(name) {
+  // [업체명]기초번호판설치점검_주간보고_YYYYMMDD
+  const m = name.match(/^\[([^\]]+)\].*?_(\d{8})/);
+  if (!m) return null;
+  const company = m[1];
+  const d = m[2];
+  const dateStr = `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  return { company, dateStr };
+}
+function thisThursday() {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun,4=Thu
+  const diff = (4 - day + 7) % 7;
+  const thu = new Date(now); thu.setDate(now.getDate() + diff);
+  return thu.toISOString().slice(0,10);
 }
 
+// ---- config 로드 ----
+async function loadConfig() {
+  if (CONFIG) return CONFIG;
+  try {
+    const res = await fetch('data/config.json', {cache:'no-store'});
+    CONFIG = await res.json();
+  } catch(e) {
+    CONFIG = { companies: [] };
+  }
+  return CONFIG;
+}
+
+// ---- 업체 템플릿 파일명 ----
+function templateFilename(company) {
+  return `templates/[${company}]기초번호판설치점검_주간보고_템플릿.xlsx`;
+}
+
+// ---- 회사 상태 그리드 ----
+async function renderCompanyGrid() {
+  const cfg = await loadConfig();
+  const currentWeek = thisThursday();
+  $('#currentWeekTag').textContent = `${currentWeek} 기준`;
+  const master = LocalStore.getMasterWeek(currentWeek);
+  const uploads = master?.companyUploads || {};
+  $('#companyStatusGrid').innerHTML = cfg.companies.map(c => {
+    const up = uploads[c.name];
+    const done = !!up;
+    const time = done ? new Date(up.uploadedAt).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div class="co-card ${done?'done':'missing'}">
+      <div class="co-name">${c.name}</div>
+      <div class="co-status ${done?'done':'missing'}">${done?'업로드 완료':'미업로드'}</div>
+      ${done?`<div class="co-time">${time}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+// ---- 파일 처리 ----
 function handleFile(file) {
+  const parsed = parseFilename(file.name);
+  if (!parsed) {
+    alert(`파일명 형식이 맞지 않습니다.\n올바른 형식: [업체명]기초번호판설치점검_주간보고_YYYYMMDD.xlsx`);
+    return;
+  }
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const snap = Parser.parse(e.target.result, file.name);
-      if (!snap) { alert('「시군구별_진도현황」 시트를 찾을 수 없습니다. 템플릿 양식을 확인해주세요.'); return; }
+      const snap = parseCompanyTemplate(e.target.result, parsed.company, parsed.dateStr, file.name);
+      if (!snap) { alert('파일을 읽을 수 없습니다. 업체 템플릿 양식인지 확인해주세요.'); return; }
+      PENDING = snap;
       showPreview(snap);
-    } catch (err) {
+    } catch(err) {
       console.error(err);
-      alert('파일을 읽는 중 오류가 발생했습니다. 올바른 .xlsx 파일인지 확인해주세요.');
+      alert('파일 파싱 오류: ' + err.message);
     }
   };
   reader.readAsArrayBuffer(file);
 }
 
-$('#pickBtn').addEventListener('click', ()=> $('#fileInput').click());
+function parseCompanyTemplate(buf, company, dateStr, fileName) {
+  const wb = XLSX.read(buf, {type:'array', raw:true});
+  const ws = wb.Sheets['주간실적입력'];
+  if (!ws) return null;
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true});
+  // 헤더는 row 6 (index 5), 데이터는 row 7~ (index 6~)
+  const hdr = (aoa[5]||[]).map(c=>c==null?'':String(c).trim());
+  const idxSido = hdr.indexOf('시도');
+  const idxSigungu = hdr.indexOf('시군구');
+  const idxTarget = hdr.indexOf('전체대상건수');
+  const idxThis = hdr.indexOf('금주점검건수');
+  const idxNormal = hdr.indexOf('정상');
+  const idxDamage = hdr.indexOf('훼손');
+  const idxLost = hdr.indexOf('망실');
+  if (idxSido<0 || idxSigungu<0) return null;
+  const regions = [];
+  for (let r=6; r<aoa.length; r++) {
+    const row = aoa[r]; if (!row) continue;
+    const sido = row[idxSido]; if (!sido || String(sido).includes('합')) continue;
+    regions.push({
+      sido: String(sido), sigungu: String(row[idxSigungu]||''),
+      target: parseFloat(row[idxTarget])||0, thisWeek: parseFloat(row[idxThis])||0,
+      normal: parseFloat(row[idxNormal])||0, damage: parseFloat(row[idxDamage])||0,
+      lost: parseFloat(row[idxLost])||0,
+    });
+  }
+  const {start, end} = getWeekPeriod(dateStr);
+  return { company, dateStr, weekStart:start, weekEnd:end, fileName, uploadedAt:new Date().toISOString(), regions };
+}
+
+function showPreview(snap) {
+  $('#previewCard').classList.remove('hidden');
+  $('#prevCompany').value = snap.company;
+  $('#prevDate').value = snap.dateStr;
+  $('#prevPeriod').value = `${snap.weekStart} ~ ${snap.weekEnd}`;
+  const totalTarget = snap.regions.reduce((a,r)=>a+r.target,0);
+  const totalThis = snap.regions.reduce((a,r)=>a+r.thisWeek,0);
+  const totalNormal = snap.regions.reduce((a,r)=>a+r.normal,0);
+  $('#prevKpis').innerHTML = [
+    kpiCard('담당 지자체', snap.regions.length+'개'),
+    kpiCard('전체 대상건수', totalTarget.toLocaleString()),
+    kpiCard('금주 점검건수', totalThis.toLocaleString()),
+    kpiCard('정상', totalNormal.toLocaleString()),
+  ].join('');
+  $('#saveStatus').style.display = 'none';
+}
+
+// ---- 마스터에 병합 ----
+async function mergeAndSave(snap) {
+  const cfg = await loadConfig();
+  const date = snap.dateStr;
+  // 기존 마스터 로드
+  let master = LocalStore.getMasterWeek(date);
+  if (!master) {
+    // 새 마스터 초기화
+    master = {
+      baseDate: date, weekStart: snap.weekStart, weekEnd: snap.weekEnd,
+      uploadedAt: new Date().toISOString(), companyUploads: {}, regions: [],
+      rollbackHistory: {}
+    };
+    // config의 모든 지자체 초기화
+    cfg.companies.forEach(c => c.regions.forEach(r => {
+      master.regions.push({
+        sido:r.sido, sigungu:r.sigungu, vendor:c.name,
+        target:r.target, thisWeek:0, cumulative:0, prevWeek:0,
+        progress:0, remain:r.target, normal:0, damage:0, lost:0, note:''
+      });
+    }));
+  }
+  // 롤백용 이전 데이터 저장
+  if (master.companyUploads[snap.company]) {
+    if (!master.rollbackHistory) master.rollbackHistory = {};
+    if (!master.rollbackHistory[snap.company]) master.rollbackHistory[snap.company] = [];
+    master.rollbackHistory[snap.company].push({
+      uploadedAt: master.companyUploads[snap.company].uploadedAt,
+      regions: master.companyUploads[snap.company].regions,
+    });
+    // 최대 3개 보관
+    if (master.rollbackHistory[snap.company].length > 3)
+      master.rollbackHistory[snap.company].shift();
+  }
+  // 이번 업체 데이터 갱신
+  master.companyUploads[snap.company] = { uploadedAt: snap.uploadedAt, regions: snap.regions };
+  // regions 배열 갱신
+  snap.regions.forEach(nr => {
+    const idx = master.regions.findIndex(r => r.sido===nr.sido && r.sigungu===nr.sigungu);
+    if (idx>=0) {
+      const pr = master.regions[idx];
+      pr.thisWeek = nr.thisWeek;
+      pr.normal = nr.normal; pr.damage = nr.damage; pr.lost = nr.lost;
+      // 누적: prevWeek + thisWeek (prevWeek는 이전 주차에서 불러옴)
+      pr.cumulative = pr.prevWeek + nr.thisWeek;
+      pr.remain = pr.target - pr.cumulative;
+      pr.progress = pr.target ? pr.cumulative/pr.target : 0;
+    }
+  });
+  master.uploadedAt = new Date().toISOString();
+  LocalStore.saveMasterWeek(date, master);
+  return master;
+}
+
+// ---- 롤백 ----
+function rollback(date, company, histIdx) {
+  const master = LocalStore.getMasterWeek(date);
+  if (!master?.rollbackHistory?.[company]?.[histIdx]) return;
+  const old = master.rollbackHistory[company][histIdx];
+  // 현재 데이터를 history에 추가
+  if (!master.rollbackHistory[company]) master.rollbackHistory[company] = [];
+  master.rollbackHistory[company].push({ uploadedAt: master.companyUploads[company]?.uploadedAt, regions: master.companyUploads[company]?.regions });
+  // 복원
+  master.companyUploads[company] = { uploadedAt: old.uploadedAt, regions: old.regions };
+  old.regions.forEach(nr => {
+    const idx = master.regions.findIndex(r=>r.sido===nr.sido && r.sigungu===nr.sigungu);
+    if (idx>=0) {
+      const pr = master.regions[idx];
+      pr.thisWeek = nr.thisWeek; pr.normal = nr.normal; pr.damage = nr.damage; pr.lost = nr.lost;
+      pr.cumulative = pr.prevWeek + nr.thisWeek;
+      pr.remain = pr.target - pr.cumulative;
+      pr.progress = pr.target ? pr.cumulative/pr.target : 0;
+    }
+  });
+  master.rollbackHistory[company].splice(histIdx, 1);
+  LocalStore.saveMasterWeek(date, master);
+  renderWeekHistory(); renderCompanyGrid();
+  alert(`${company} - ${old.uploadedAt.slice(0,16)} 버전으로 롤백했습니다.`);
+}
+
+// ---- 주차 이력 테이블 ----
+async function renderWeekHistory() {
+  const cfg = await loadConfig();
+  const weeks = LocalStore.listWeeks().reverse();
+  if (!weeks.length) { $('#weekHistoryCard').innerHTML = `<div class="empty">저장된 주차가 없습니다</div>`; return; }
+  let html = '<div style="padding:12px 14px;">';
+  for (const date of weeks) {
+    const master = LocalStore.getMasterWeek(date);
+    if (!master) continue;
+    const t = master.regions.reduce((a,r)=>({target:a.target+r.target, cumulative:a.cumulative+r.cumulative, thisWeek:a.thisWeek+r.thisWeek}), {target:0,cumulative:0,thisWeek:0});
+    html += `<div class="rollback-row">
+      <div>
+        <span class="period-tag">${master.weekStart} ~ ${master.weekEnd}</span>
+        <span style="font-size:12px;font-weight:800;color:var(--navy);margin-left:8px;">${date}</span>
+        <span style="font-size:11px;color:var(--muted);margin-left:6px;">누적 ${t.cumulative.toLocaleString()}건 / 금주 ${t.thisWeek.toLocaleString()}건</span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">`;
+    // 업체별 업로드 여부 뱃지
+    cfg.companies.forEach(c => {
+      const done = !!master.companyUploads?.[c.name];
+      html += `<span class="badge ${done?'ok':'muted'}" style="font-size:9px;">${c.name.slice(0,4)}</span>`;
+    });
+    html += `</div></div>`;
+    // 롤백 이력
+    cfg.companies.forEach(c => {
+      const hist = master.rollbackHistory?.[c.name] || [];
+      hist.forEach((h, i) => {
+        html += `<div style="padding:4px 0 4px 20px;font-size:11px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;">
+          <span>↩ ${c.name} 이전버전: ${(h.uploadedAt||'').slice(0,16)}</span>
+          <button class="btn ghost" onclick="rollback('${date}','${c.name}',${i})" style="font-size:11px;padding:4px 8px;">복원</button>
+        </div>`;
+      });
+    });
+  }
+  html += '</div>';
+  $('#weekHistoryCard').innerHTML = html;
+}
+
+// ---- 이벤트 바인딩 ----
+$('#pickBtn').addEventListener('click', ()=>$('#fileInput').click());
 $('#fileInput').addEventListener('change', e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
 const dz = $('#dropZone');
 ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('drag');}));
 ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('drag');}));
 dz.addEventListener('drop', e=>{ const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
 
-$('#saveLocalBtn').addEventListener('click', async ()=>{
+$('#saveBtn').addEventListener('click', async ()=>{
   if (!PENDING) return;
-  LocalStore.saveWeek(PENDING);
-  alert(`${PENDING.baseDate} 주차 데이터가 이 기기에 저장되었습니다.`);
-  PENDING = null;
-  $('#previewCard').classList.add('hidden');
-  await refreshWeekTable();
-});
-
-/* ---- 저장된 주차 목록 ---- */
-async function refreshWeekTable() {
-  const weeks = await DataLayer.listAllWeeks();
-  if (weeks.length===0) {
-    $('#weekTable').innerHTML = `<div class="empty">아직 저장된 주차가 없습니다</div>`;
-    return;
+  $('#saveBtn').disabled = true;
+  const statusEl = $('#saveStatus');
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = '⏳ 저장 중…';
+  try {
+    await mergeAndSave(PENDING);
+    statusEl.innerHTML = `✅ <b>${PENDING.company}</b> ${PENDING.dateStr} 주차 데이터가 저장되었습니다.`;
+    PENDING = null;
+    await renderCompanyGrid();
+    await renderWeekHistory();
+    $('#previewCard').classList.add('hidden');
+  } catch(e) {
+    statusEl.innerHTML = `❌ 저장 실패: ${e.message}`;
+  } finally {
+    $('#saveBtn').disabled = false;
   }
-  $('#weekTable').innerHTML = `<table class="dt"><thead><tr>
-      <th>기준일자</th><th>대상건수</th><th>누적점검</th><th>진도율</th><th>상태</th><th>관리</th>
-    </tr></thead><tbody>
-    ${(await Promise.all(weeks.map(async w=>{
-      const snap = await DataLayer.getWeek(w.date);
-      const t = snap ? totals(snap.regions) : {target:0,cumulative:0,progress:0};
-      const badge = w.source==='committed' ? '<span class="badge ok">저장소 커밋됨</span>'
-                  : w.source==='both' ? '<span class="badge ok">커밋됨+로컬수정</span>'
-                  : '<span class="badge warn">로컬에만 저장</span>';
-      const delBtn = (w.source==='local'||w.source==='both') ? `<button class="btn ghost" data-del="${w.date}">로컬삭제</button>` : '-';
-      return `<tr><td>${w.date}</td><td>${fmt(t.target)}</td><td>${fmt(t.cumulative)}</td><td>${pct(t.progress)}</td><td>${badge}</td><td>${delBtn}</td></tr>`;
-    }))).join('')}
-    </tbody></table>`;
-  $$('#weekTable [data-del]').forEach(b=>b.addEventListener('click', async ()=>{
-    if (confirm(`${b.dataset.del} 주차의 로컬 저장 데이터를 삭제할까요? (저장소에 커밋된 데이터는 영향 없음)`)) {
-      LocalStore.deleteWeek(b.dataset.del);
-      await refreshWeekTable();
-    }
-  }));
-}
+});
+$('#cancelBtn').addEventListener('click', ()=>{ PENDING=null; $('#previewCard').classList.add('hidden'); });
 
-/* ---- export ---- */
-$('#exportIndexBtn').addEventListener('click', async ()=>{
-  const weeks = await DataLayer.listAllWeeks();
-  downloadJSON({ weeks: weeks.map(w=>w.date) }, 'index.json');
+// ---- 내보내기 ----
+$('#exportIndexBtn').addEventListener('click', ()=>{
+  const weeks = LocalStore.listWeeks();
+  downloadJSON({weeks}, 'index.json');
 });
-$('#exportLatestWeekBtn').addEventListener('click', async ()=>{
-  const weeks = await DataLayer.listAllWeeks();
-  if (weeks.length===0) { alert('저장된 데이터가 없습니다.'); return; }
-  const date = weeks[weeks.length-1].date;
-  const snap = await DataLayer.getWeek(date);
-  downloadJSON(snap, `${date}.json`);
+$('#exportLatestBtn').addEventListener('click', ()=>{
+  const weeks = LocalStore.listWeeks();
+  if (!weeks.length) { alert('저장된 데이터가 없습니다.'); return; }
+  const date = weeks[weeks.length-1];
+  const master = LocalStore.getMasterWeek(date);
+  downloadJSON(master, `${date}.json`);
 });
-$('#exportAllWeeksBtn').addEventListener('click', async ()=>{
-  const weeks = await DataLayer.listAllWeeks();
-  if (weeks.length===0) { alert('저장된 데이터가 없습니다.'); return; }
-  for (const w of weeks) {
-    const snap = await DataLayer.getWeek(w.date);
-    if (snap) downloadJSON(snap, `${w.date}.json`);
-  }
-  alert(`${weeks.length}개 주차 파일이 다운로드 폴더에 저장되었습니다. data/weekly/ 폴더에 옮겨 커밋하세요.`);
-});
-$('#exportRegionBtn').addEventListener('click', async ()=>{
-  const weeks = await DataLayer.listAllWeeks();
+$('#exportByRegionBtn').addEventListener('click', ()=>{
+  const weeks = LocalStore.listWeeks();
   const out = {};
-  for (const w of weeks) {
-    const snap = await DataLayer.getWeek(w.date);
-    if (!snap) continue;
-    snap.regions.forEach(r=>{
+  weeks.forEach(date=>{
+    const m = LocalStore.getMasterWeek(date);
+    if (!m) return;
+    m.regions.forEach(r=>{
       const key = `${r.sido} ${r.sigungu}`;
-      if (!out[key]) out[key] = [];
-      out[key].push({ baseDate: snap.baseDate, vendor:r.vendor, target:r.target, cumulative:r.cumulative,
-        thisWeek:r.thisWeek, progress:r.progress, remain:r.remain, normal:r.normal, damage:r.damage, lost:r.lost });
+      if (!out[key]) out[key]=[];
+      out[key].push({date, vendor:r.vendor, target:r.target, thisWeek:r.thisWeek, cumulative:r.cumulative, progress:r.progress, normal:r.normal, damage:r.damage, lost:r.lost});
     });
-  }
-  if (Object.keys(out).length===0) { alert('저장된 데이터가 없습니다.'); return; }
+  });
   downloadJSON(out, `시군구별_통합_${new Date().toISOString().slice(0,10)}.json`);
 });
-$('#exportVendorBtn').addEventListener('click', async ()=>{
-  const weeks = await DataLayer.listAllWeeks();
+$('#exportByVendorBtn').addEventListener('click', ()=>{
+  const weeks = LocalStore.listWeeks();
   const out = {};
-  for (const w of weeks) {
-    const snap = await DataLayer.getWeek(w.date);
-    if (!snap) continue;
-    byVendorFromRegions(snap.regions).forEach(v=>{
-      if (!out[v.name]) out[v.name] = [];
-      out[v.name].push({ baseDate: snap.baseDate, regionCount:v.count, target:v.target, cumulative:v.cumulative, progress:v.progress });
+  weeks.forEach(date=>{
+    const m = LocalStore.getMasterWeek(date);
+    if (!m) return;
+    const map = {};
+    m.regions.forEach(r=>{
+      if (!map[r.vendor]) map[r.vendor]={count:0,target:0,thisWeek:0,cumulative:0};
+      map[r.vendor].count++; map[r.vendor].target+=r.target; map[r.vendor].thisWeek+=r.thisWeek; map[r.vendor].cumulative+=r.cumulative;
     });
-  }
-  if (Object.keys(out).length===0) { alert('저장된 데이터가 없습니다.'); return; }
+    Object.entries(map).forEach(([name,v])=>{
+      if (!out[name]) out[name]=[];
+      out[name].push({date, ...v, progress:v.target?v.cumulative/v.target:0});
+    });
+  });
   downloadJSON(out, `업체별_통합_${new Date().toISOString().slice(0,10)}.json`);
 });
 
-refreshWeekTable();
+// ---- 템플릿 다운로드 링크 ----
+async function renderTemplateLinks() {
+  const cfg = await loadConfig();
+  $('#templateLinks').innerHTML = cfg.companies.map(c=>`
+    <a href="templates/[${c.name}]기초번호판설치점검_주간보고_템플릿.xlsx" download class="btn outline sm" style="min-width:140px;text-decoration:none;">${c.name}</a>
+  `).join('');
+}
+
+// ---- 초기화 ----
+(async function init(){
+  renderNav('upload');
+  await loadConfig();
+  await renderCompanyGrid();
+  await renderWeekHistory();
+  await renderTemplateLinks();
+})();
 </script>
 </body>
 </html>
