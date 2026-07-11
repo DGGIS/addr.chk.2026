@@ -24,6 +24,16 @@ const GitHubCommit = {
     return data.sha || null;
   },
 
+  async getFile(path) {
+    const res = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${path}?ref=${GH_BRANCH}`, {
+      headers: { Authorization: `Bearer ${this.getPAT()}`, Accept: 'application/vnd.github+json' }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const content = JSON.parse(atob(data.content.replace(/\n/g, '')));
+    return { content, sha: data.sha };
+  },
+
   async putFile(path, jsonObj, msg) {
     const sha = await this._getFileSHA(path);
     const body = {
