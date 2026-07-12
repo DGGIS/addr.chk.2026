@@ -1,0 +1,61 @@
+{
+  "company": "더퍼스트아이씨티",
+  "slug": "thefirst",
+  "baseDate": "2026-07-16",
+  "weekStart": "2026-07-10",
+  "weekEnd": "2026-07-16",
+  "uploadedAt": "2026-07-12T07:46:01.953Z",
+  "reportText": {
+    "reporter": "권종국",
+    "weeklyWork": "- 더퍼스트아이씨티 - 금주실적 테스트 (7/16)\r\n- 더퍼스트아이씨티 - 금주실적 테스트 (7/16)\r\n- 더퍼스트아이씨티 - 금주실적 테스트 (7/16)",
+    "plan": "- 더퍼스트아이씨티 - 추진계획 테스트 (7/16)\r\n- 더퍼스트아이씨티 - 추진계획 테스트 (7/16)\r\n- 더퍼스트아이씨티 - 추진계획 테스트 (7/16)",
+    "note": "- 더퍼스트아이씨티 - 특이사항 없슴"
+  },
+  "regions": [
+    {
+      "sido": "경기도",
+      "sigungu": "안양시 동안구",
+      "target": 141,
+      "thisWeek": 10,
+      "normal": 0,
+      "damage": 0,
+      "lost": 0
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "안양시 만안구",
+      "target": 210,
+      "thisWeek": 10,
+      "normal": 0,
+      "damage": 0,
+      "lost": 0
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "용인시 기흥구",
+      "target": 388,
+      "thisWeek": 10,
+      "normal": 0,
+      "damage": 0,
+      "lost": 0
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "용인시 수지구",
+      "target": 218,
+      "thisWeek": 10,
+      "normal": 0,
+      "damage": 0,
+      "lost": 0
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "용인시 처인구",
+      "target": 3542,
+      "thisWeek": 10,
+      "normal": 0,
+      "damage": 0,
+      "lost": 0
+    }
+  ]
+}
