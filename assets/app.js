@@ -107,31 +107,119 @@ const LocalStore = {
 };
 
 // ---- DataLayer ----
+// const DataLayer = (() => {
+//   let remoteIdx = null;
+//   const remoteCache = {};
+
+//   async function listAllWeeks() {
+//     if (!remoteIdx) remoteIdx = await LocalStore.fetchRemoteIndex();
+//     const local = LocalStore.listWeeks();
+//     const map = new Map();
+//     remoteIdx.forEach(d=>map.set(d,'remote'));
+//     local.forEach(d=>map.set(d, map.has(d)?'both':'local'));
+//     return [...map.entries()].map(([date,src])=>({date,src})).sort((a,b)=>a.date.localeCompare(b.date));
+//   }
+
+//   async function getWeek(date) {
+//     const local = LocalStore.getMasterWeek(date);
+//     if (local) return local;
+//     const remote = await LocalStore.fetchRemoteWeek(date);
+//     if (remote) return remote;
+//     return null;
+//   }
+
+//   async function getLatestWeek() {
+//     const weeks = await listAllWeeks();
+//     if (!weeks.length) return null;
+//     return await getWeek(weeks[weeks.length-1].date);
+//   }
+
+//   return { listAllWeeks, getWeek, getLatestWeek };
+// })();
+
+const COMPANY_MAP = {
+  '내가시스템': 'nega',
+  '대국지아이에스': 'dggis',
+  '더퍼스트아이씨티': 'thefirst',
+  '새한항업': 'saehan',
+  '웨이즈원': 'ways1'
+};
+
 const DataLayer = (() => {
   let remoteIdx = null;
-  const remoteCache = {};
+  const companyKeys = Object.values(COMPANY_MAP); // ['nega', 'dggis', ...]
 
+  // 개별 조각 파일들을 기존과 동일한 단일 마스터 포맷으로 실시간 조립하는 함수
+  function assembleMasterFromSplits(date, companySnaps) {
+    const master = {
+      baseDate: date,
+      companyUploads: {},
+      regions: []
+    };
+
+    companySnaps.forEach(snap => {
+      if (!snap) return; 
+
+      master.companyUploads[snap.company] = {
+        uploadedAt: snap.uploadedAt,
+        reportText: snap.reportText,
+        regions: snap.regions || []
+      };
+
+      if (Array.isArray(snap.regions)) {
+        master.regions.push(...snap.regions);
+      }
+    });
+
+    return master;
+  }
+
+  // 1. 기존 listAllWeeks 기능 유지
   async function listAllWeeks() {
     if (!remoteIdx) remoteIdx = await LocalStore.fetchRemoteIndex();
     const local = LocalStore.listWeeks();
     const map = new Map();
-    remoteIdx.forEach(d=>map.set(d,'remote'));
-    local.forEach(d=>map.set(d, map.has(d)?'both':'local'));
-    return [...map.entries()].map(([date,src])=>({date,src})).sort((a,b)=>a.date.localeCompare(b.date));
+    remoteIdx.forEach(d => map.set(d, 'remote'));
+    local.forEach(d => map.set(d, map.has(d) ? 'both' : 'local'));
+    return [...map.entries()].map(([date, src]) => ({ date, src })).sort((a, b) => a.date.localeCompare(b.date));
   }
 
+  // 2. 새롭게 수정된 분할 파일 병합형 getWeek
   async function getWeek(date) {
+    // 로컬스토리지에 이미 합쳐진 캐시가 있다면 즉시 반환
     const local = LocalStore.getMasterWeek(date);
     if (local) return local;
-    const remote = await LocalStore.fetchRemoteWeek(date);
-    if (remote) return remote;
-    return null;
+
+    try {
+      // 5개 파일 동시 다운로드 (병렬 비동기 처리)
+      const promises = companyKeys.map(engName => 
+        fetch(`data/weekly/${engName}-${date}.json`, { cache: 'no-store' })
+          .then(res => res.ok ? res.json() : null)
+          .catch(() => null)
+      );
+
+      const results = await Promise.all(promises);
+
+      // 데이터가 전부 다 없다면 null 리턴
+      if (results.every(r => r === null)) return null;
+
+      // 다운로드된 조각들을 조립
+      const master = assembleMasterFromSplits(date, results);
+
+      // 조립 완료된 데이터를 로컬스토리지에 캐싱
+      LocalStore.setMasterWeek(date, master);
+      return master;
+    } catch (e) {
+      console.error("통합 데이터 구성 중 오류 발생:", e);
+      return null;
+    }
   }
 
+  // 3. 기존 getLatestWeek 기능 유지
   async function getLatestWeek() {
     const weeks = await listAllWeeks();
     if (!weeks.length) return null;
-    return await getWeek(weeks[weeks.length-1].date);
+    return await getWeek(weeks[weeks.length - 1].date);
   }
 
   return { listAllWeeks, getWeek, getLatestWeek };
