@@ -286,11 +286,14 @@ function parseCompanyTemplate(buf, company, dateStr, fileName) {
   const regions = [];
   for (let r=4; r<aoa.length; r++) {
     const row = aoa[r]; if (!row) continue;
-    const sido = row[idxSido];
-    if (!sido || String(sido).includes('합')) continue;
+    const sido    = row[idxSido];
+    const sigungu = row[idxSigungu];
+    // 합계행/안내행 건너뜀: sido 또는 sigungu가 없으면 스킵
+    // 주의: '전남광주통합특별시'처럼 '합'자 포함 시도명은 스킵하면 안 됨
+    if (!sido || !sigungu || String(sigungu).trim() === '') continue;
     regions.push({
       sido: String(sido).trim(),
-      sigungu: String(row[idxSigungu]||'').trim(),
+      sigungu: String(sigungu).trim(),
       target: parseFloat(row[idxTarget])||0,
       thisWeek: parseFloat(row[idxThis])||0,  // 0이어도 OK
       normal:0, damage:0, lost:0,
