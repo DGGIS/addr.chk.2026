@@ -630,6 +630,72 @@ async function renderTemplateLinks() {
   ).join('');
 }
 
+
+// ---- GitHub 커밋 헬퍼 (upload.html 자체 내장, app.js 독립) ----
+const _GH = {
+  owner: 'dggis',
+  repo:  'addr.chk.2026',
+  branch: 'main',
+  pat() { return localStorage.getItem('kaba_gh_pat') || ''; },
+  headers() {
+    return {
+      Authorization: 'Bearer ' + this.pat(),
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json'
+    };
+  },
+  base() { return `https://api.github.com/repos/${this.owner}/${this.repo}/contents`; },
+
+  async getFile(path) {
+    const res = await fetch(`${this.base()}/${path}?ref=${this.branch}`, { headers: this.headers() });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const content = JSON.parse(atob(data.content.replace(/\n/g, '')));
+    return { content, sha: data.sha };
+  },
+
+  async putFile(path, jsonObj, msg) {
+    // SHA 조회
+    const existing = await this.getFile(path).catch(()=>null);
+    const body = {
+      message: msg,
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(jsonObj, null, 2)))),
+      branch: this.branch
+    };
+    if (existing?.sha) body.sha = existing.sha;
+    const res = await fetch(`${this.base()}/${path}`, {
+      method: 'PUT', headers: this.headers(), body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({}));
+      throw new Error(err.message || `GitHub 오류 (${res.status})`);
+    }
+    return true;
+  },
+
+  async commitWeek(date, master) {
+    // 1. weekly 파일 저장
+    await this.putFile(`data/weekly/${date}.json`, master, `chore: ${date} 주차 데이터 업로드`);
+    // 2. index.json — GitHub 기존 목록 + 로컬 목록 + 새 날짜 → 합집합으로 저장
+    let ghWeeks = [];
+    try {
+      const idx = await this.getFile('data/index.json');
+      if (idx?.content?.weeks) ghWeeks = idx.content.weeks;
+    } catch(e) {}
+    const localWeeks = typeof LocalStore !== 'undefined' ? LocalStore.listWeeks() : [];
+    const merged = [...new Set([...ghWeeks, ...localWeeks, date])].sort();
+    await this.putFile('data/index.json', { weeks: merged }, `chore: index.json 갱신 (${date} 추가)`);
+    return merged;
+  }
+};
+
+// GitHubCommit을 _GH로 오버라이드 (app.js의 구버전 덮어쓰기)
+if (typeof GitHubCommit !== 'undefined') {
+  GitHubCommit.getFile    = (p)    => _GH.getFile(p);
+  GitHubCommit.putFile    = (p,o,m)=> _GH.putFile(p,o,m);
+  GitHubCommit.commitWeek = (d,m)  => _GH.commitWeek(d,m);
+}
+
 // ---- 초기화 ----
 (async function init(){
   renderNav('upload');
