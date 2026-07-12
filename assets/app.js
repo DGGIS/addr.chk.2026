@@ -235,6 +235,7 @@ function byVendor(regions=[]) {
   });
   return Object.values(map).map(m=>({...m,progress:m.target?m.cumulative/m.target:0})).sort((a,b)=>b.target-a.target);
 }
+const byVendorFromRegions = byVendor; // index.html 호환용 별칭
 
 // ---- 공통 UI ----
 const $ = (s,el=document)=>el.querySelector(s);
