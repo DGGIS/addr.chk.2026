@@ -741,15 +741,33 @@ const _GH = {
       companyData,
       `chore: ${snap.company} ${date} 주차 데이터`
     );
-    // index.json — 날짜 목록만 갱신 (weekly 파일 읽기 불필요)
-    let ghWeeks = [];
-    try {
-      const idx = await this.getFile('data/index.json');
-      if (idx?.content?.weeks) ghWeeks = idx.content.weeks;
-    } catch(e) {}
+
+    // index.json — 날짜 목록만 갱신. SHA 충돌·네트워크 순간 오류 등으로
+    // 이 두 번째 쓰기만 실패하면 업체 데이터는 이미 저장된 채로 index.json만
+    // 누락되는 불일치가 생기므로, 최대 3회까지 SHA를 새로 읽어 재시도한다.
     const localWeeks = typeof LocalStore !== 'undefined' ? LocalStore.listWeeks() : [];
-    const merged = [...new Set([...ghWeeks, ...localWeeks, date])].sort();
-    await this.putFile('data/index.json', { weeks: merged }, `chore: index.json 갱신 (${date} 추가)`);
+    let merged = null, lastErr = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        let ghWeeks = [];
+        try {
+          const idx = await this.getFile('data/index.json');
+          if (idx?.content?.weeks) ghWeeks = idx.content.weeks;
+        } catch(e) {}
+        merged = [...new Set([...ghWeeks, ...localWeeks, date])].sort();
+        await this.putFile('data/index.json', { weeks: merged }, `chore: index.json 갱신 (${date} 추가)`);
+        lastErr = null;
+        break;
+      } catch(e) {
+        lastErr = e;
+        await new Promise(res => setTimeout(res, 400 * (attempt + 1))); // 잠깐 대기 후 재시도
+      }
+    }
+    if (lastErr) {
+      // 업체 데이터 파일은 이미 정상 저장됐음을 명확히 구분해서 알림
+      // (index.json은 다음 업로드 시 자동으로 따라잡히지만, 즉시 인지할 수 있도록 에러를 위로 던짐)
+      throw new Error(`업체 데이터(${snap.company})는 저장되었으나 index.json 갱신에 실패했습니다: ${lastErr.message}`);
+    }
     return merged;
   }
 };

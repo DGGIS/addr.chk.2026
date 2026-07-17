@@ -45,7 +45,6 @@
       </div>
       <div class="kpi-grid" id="weeklyKpis"></div>
 
-      <div class="section-title">금주 점검 실적 상위 지역 <span class="tag">금주점검건수 기준</span></div>
       <div class="section-title">금주 업체별 보고 내용 <span class="tag">금주실적 · 추진계획</span></div>
       <div id="weeklyTextReports"></div>
 
@@ -322,72 +321,6 @@ $('#printBtn').addEventListener('click', ()=> window.print());
 
 (async function init(){
   renderNav('report');
-
-/* ---- 기준월 태그 ---- */
-// $('#monthLastDateTag') 교체는 renderMonthly에서 처리
-
-/* ---- PIN 관리자 ---- */
-let _adminPin = null;
-let _pinUnlocked = sessionStorage.getItem('kaba_admin_unlocked')==='1';
-let _currentMonth = null;
-
-async function loadAdminPin(){
-  try{ const r=await fetch('data/config.json',{cache:'no-store'}); const c=await r.json(); _adminPin=c.adminPin||null; }catch{}
-}
-function togglePin(){
-  if(_pinUnlocked){ _pinUnlocked=false; sessionStorage.removeItem('kaba_admin_unlocked'); applyPinState(); return; }
-  const v=prompt('관리자 PIN을 입력하세요:'); if(!v) return;
-  if(v===_adminPin){ _pinUnlocked=true; sessionStorage.setItem('kaba_admin_unlocked','1'); applyPinState(); }
-  else alert('PIN이 올바르지 않습니다.');
-}
-function applyPinState(){
-  const btn=$('#pinLockBtn'), lbl=$('#pinStatusLabel'), disp=$('#moPlanDisplay'), inp=$('#moPlanInput'), sBtn=$('#moPlanSaveBtn');
-  if(!btn) return;
-  if(_pinUnlocked){
-    btn.textContent='🔓'; btn.title='잠금 (클릭)';
-    if(lbl){lbl.textContent='(관리자 모드)'; lbl.style.color='var(--green)';}
-    if(disp) disp.classList.add('hidden');
-    if(inp){inp.classList.remove('hidden'); inp.focus();}
-    if(sBtn) sBtn.classList.remove('hidden');
-  } else {
-    btn.textContent='🔒'; btn.title='관리자 잠금 해제';
-    if(lbl){lbl.textContent='(잠김 · 관리자만 입력)'; lbl.style.color='var(--red)';}
-    if(disp) disp.classList.remove('hidden');
-    if(inp) inp.classList.add('hidden');
-    if(sBtn) sBtn.classList.add('hidden');
-  }
-}
-async function saveMoPlan(){
-  const month=_currentMonth; if(!month) return;
-  const val=($('#moPlanInput')||{}).value||'';
-  localStorage.setItem('kaba_moPlan_'+month, val);
-  const pat=localStorage.getItem('kaba_gh_pat');
-  const btn=$('#moPlanSaveBtn');
-  if(pat){
-    if(btn) btn.textContent='저장 중…';
-    try{
-      const path='data/mo-plan/'+month+'.json';
-      const api='https://api.github.com/repos/dggis/addr.chk.2026/contents/'+path;
-      const hdrs={Authorization:'Bearer '+pat,Accept:'application/vnd.github+json','Content-Type':'application/json'};
-      const ex=await fetch(api+'?ref=main',{headers:hdrs}).then(r=>r.ok?r.json():null).catch(()=>null);
-      const body={message:'chore: 월간 추진계획 '+month,content:btoa(unescape(encodeURIComponent(JSON.stringify({month,plan:val,updatedAt:new Date().toISOString()})))),branch:'main'};
-      if(ex?.sha) body.sha=ex.sha;
-      await fetch(api,{method:'PUT',headers:hdrs,body:JSON.stringify(body)});
-      if(btn){btn.textContent='✅ 저장됨'; setTimeout(()=>btn.textContent='GitHub 저장',2000);}
-    }catch(e){ if(btn) btn.textContent='GitHub 저장'; alert('저장 실패: '+e.message); }
-  } else { alert('이 기기에 저장됐습니다 (GitHub 저장은 PAT 필요)'); }
-  const d=$('#moPlanDisplay'); if(d) d.textContent=val;
-}
-async function loadMoPlan(month){
-  const local=localStorage.getItem('kaba_moPlan_'+month); if(local!==null) return local;
-  const pat=localStorage.getItem('kaba_gh_pat'); if(!pat) return '';
-  try{
-    const r=await fetch('https://api.github.com/repos/dggis/addr.chk.2026/contents/data/mo-plan/'+month+'.json?ref=main',
-      {headers:{Authorization:'Bearer '+pat,Accept:'application/vnd.github+json'}});
-    if(r.ok){const d=await r.json(); return JSON.parse(atob(d.content.replace(/\n/g,''))).plan||'';}
-  }catch{}
-  return '';
-}
   const sel = $('#weekSelect');
   await loadAdminPin();
   const { weeks, current } = await buildWeekSelector(sel, renderWeekly);
