@@ -357,6 +357,11 @@
           "target": 610
         }
       ]
+    },
+    {
+      "name": "대한지리학회",
+      "reportOnly": true,
+      "regions": []
     }
   ],
   "adminPin": "2907"
