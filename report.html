@@ -45,11 +45,18 @@
       </div>
       <div class="kpi-grid" id="weeklyKpis"></div>
 
-      <div class="section-title">금주 업체별 보고 내용 <span class="tag">금주실적 · 추진계획</span></div>
+      <div class="section-title">금주 점검 실적 상위 지역 <span class="tag">금주점검건수 기준</span></div>
+      <div class="section-title">금주 업체별 보고 내용</div>
       <div id="weeklyTextReports"></div>
 
       <div class="section-title">금주 점검 실적 상위 지역 <span class="tag">금주점검건수 기준</span></div>
       <div class="card"><div class="table-wrap" id="weeklyTop"></div></div>
+
+      <div class="section-title">특이사항 / 이슈 <span class="tag">웹에서 직접 입력</span></div>
+      <div class="card card-pad"><textarea class="note" id="wkIssue" placeholder="금주 특이사항을 입력하세요 (이 기기에 자동 저장)"></textarea></div>
+
+      <div class="section-title">차주 계획 <span class="tag">웹에서 직접 입력</span></div>
+      <div class="card card-pad"><textarea class="note" id="wkPlan" placeholder="차주 계획을 입력하세요 (이 기기에 자동 저장)"></textarea></div>
     </section>
 
     <!-- 월간 -->
@@ -70,8 +77,20 @@
       <div class="section-title">월간 주요 실적 및 이슈</div>
       <div id="moIssueCards"></div>
 
-      <div class="section-title">월간 추진계획</div>
-      <div id="moPlanCards"></div>
+      <div class="section-title">월간 추진계획
+        <button id="pinLockBtn" onclick="togglePin()" style="background:none;border:none;cursor:pointer;font-size:16px;margin-left:6px;" title="관리자 잠금 해제">🔒</button>
+      </div>
+      <!-- 업체별 마지막 주차 추진계획 (참고용) -->
+      <div id="moPlanRefCards"></div>
+      <!-- PM 종합 계획 (관리자 전용) -->
+      <div class="card card-pad" style="margin-top:8px;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+          <span>📌 PM 종합 추진계획 <span id="pinStatusLabel" style="color:var(--red);font-weight:700;">(잠김 · 관리자만 입력)</span></span>
+          <button id="moPlanSaveBtn" class="btn sm hidden" onclick="saveMoPlan()">GitHub 저장</button>
+        </div>
+        <div id="moPlanDisplay" style="font-size:13px;color:var(--text);white-space:pre-wrap;min-height:60px;padding:4px 0;line-height:1.7;"></div>
+        <textarea id="moPlanInput" class="note hidden" placeholder="다음 달 종합 추진계획을 입력하세요" style="margin-top:4px;"></textarea>
+      </div>
     </section>
   </div>
 </div>
@@ -81,6 +100,115 @@
 <script src="assets/app.js"></script>
 <script>
 renderNav('report');
+
+/* ---- PIN 관리자 잠금 ---- */
+let _adminPin = null; // config에서 로드
+let _pinUnlocked = sessionStorage.getItem('kaba_admin_unlocked') === '1';
+let _currentMonth = null;
+
+async function loadAdminPin() {
+  try {
+    const res = await fetch('data/config.json', {cache:'no-store'});
+    const cfg = await res.json();
+    _adminPin = cfg.adminPin || null;
+  } catch {}
+}
+
+function togglePin() {
+  if (_pinUnlocked) {
+    // 잠금
+    _pinUnlocked = false;
+    sessionStorage.removeItem('kaba_admin_unlocked');
+    applyPinState();
+  } else {
+    // 잠금 해제 시도
+    const input = prompt('관리자 PIN을 입력하세요:');
+    if (!input) return;
+    if (input === _adminPin) {
+      _pinUnlocked = true;
+      sessionStorage.setItem('kaba_admin_unlocked', '1');
+      applyPinState();
+    } else {
+      alert('PIN이 올바르지 않습니다.');
+    }
+  }
+}
+
+function applyPinState() {
+  const btn = $('#pinLockBtn');
+  const label = $('#pinStatusLabel');
+  const display = $('#moPlanDisplay');
+  const input = $('#moPlanInput');
+  const saveBtn = $('#moPlanSaveBtn');
+  if (!btn) return;
+  if (_pinUnlocked) {
+    btn.textContent = '🔓';
+    btn.title = '관리자 잠금 (클릭하여 잠금)';
+    if (label) { label.textContent = '(관리자 모드)'; label.style.color = 'var(--green)'; }
+    if (display) display.classList.add('hidden');
+    if (input) { input.classList.remove('hidden'); input.focus(); }
+    if (saveBtn) saveBtn.classList.remove('hidden');
+  } else {
+    btn.textContent = '🔒';
+    btn.title = '관리자 잠금 해제 (PIN 필요)';
+    if (label) { label.textContent = '(잠김 · 관리자만 입력)'; label.style.color = 'var(--red)'; }
+    if (display) display.classList.remove('hidden');
+    if (input) input.classList.add('hidden');
+    if (saveBtn) saveBtn.classList.add('hidden');
+  }
+}
+
+async function saveMoPlan() {
+  const month = _currentMonth;
+  if (!month) return;
+  const val = ($('#moPlanInput')||{}).value || '';
+  // localStorage 저장
+  localStorage.setItem('kaba_moPlan_' + month, val);
+  // GitHub 저장 (PAT 있을 때)
+  const pat = localStorage.getItem('kaba_gh_pat');
+  if (pat) {
+    const btn = $('#moPlanSaveBtn');
+    if (btn) btn.textContent = '저장 중…';
+    try {
+      const path = 'data/mo-plan/' + month + '.json';
+      const apiUrl = 'https://api.github.com/repos/dggis/addr.chk.2026/contents/' + path;
+      const hdrs = {Authorization:'Bearer '+pat, Accept:'application/vnd.github+json', 'Content-Type':'application/json'};
+      const ex = await fetch(apiUrl+'?ref=main', {headers:hdrs}).then(r=>r.ok?r.json():null).catch(()=>null);
+      const body = {message:'chore: 월간 추진계획 ' + month, content: btoa(unescape(encodeURIComponent(JSON.stringify({month, plan:val, updatedAt:new Date().toISOString()})))), branch:'main'};
+      if (ex?.sha) body.sha = ex.sha;
+      await fetch(apiUrl, {method:'PUT', headers:hdrs, body:JSON.stringify(body)});
+      if (btn) { btn.textContent = '✅ 저장됨'; setTimeout(()=>btn.textContent='GitHub 저장', 2000); }
+    } catch(e) {
+      if (btn) { btn.textContent = 'GitHub 저장'; }
+      alert('GitHub 저장 실패: ' + e.message);
+    }
+  } else {
+    alert('이 기기에 저장됐습니다 (GitHub 저장은 PAT 등록 필요)');
+  }
+  // display 업데이트
+  const display = $('#moPlanDisplay');
+  if (display) display.textContent = val;
+}
+
+async function loadMoPlan(month) {
+  // localStorage 우선
+  const local = localStorage.getItem('kaba_moPlan_' + month);
+  if (local !== null) return local;
+  // GitHub에서 로드 시도
+  const pat = localStorage.getItem('kaba_gh_pat');
+  if (pat) {
+    try {
+      const res = await fetch('https://api.github.com/repos/dggis/addr.chk.2026/contents/data/mo-plan/' + month + '.json?ref=main',
+        {headers:{Authorization:'Bearer '+pat, Accept:'application/vnd.github+json'}});
+      if (res.ok) {
+        const d = await res.json();
+        const obj = JSON.parse(atob(d.content.replace(/\n/g,'')));
+        return obj.plan || '';
+      }
+    } catch {}
+  }
+  return '';
+}
 let ALL_WEEKS = [];
 let CURRENT_WEEKLY_DATE = null;
 let CURRENT_MONTH = null;
@@ -91,6 +219,8 @@ function loadNote(id, prefix, key) { $('#'+id).value = localStorage.getItem(note
 function bindNote(id, prefix, getKey) {
   $('#'+id).addEventListener('input', e => localStorage.setItem(noteKey(prefix, getKey()), e.target.value));
 }
+bindNote('wkIssue', 'wk-issue', () => CURRENT_WEEKLY_DATE);
+bindNote('wkPlan', 'wk-plan', () => CURRENT_WEEKLY_DATE);
 bindNote('wkRound', 'wk-round', () => CURRENT_WEEKLY_DATE);
 
 /* ---- weekly ---- */
@@ -108,32 +238,27 @@ async function renderWeekly(date) {
     kpiCard('잔여건수', fmt(t.remain)),
   ].join('');
 
-  // 업체별 카드 (금주실적 + 추진계획 통합), 순서 고정
+  // 업체별 텍스트 보고 표시 (금주실적만)
   const uploads = snap.companyUploads || {};
-  const baseDate = snap.baseDate || date;
-  const COMPANY_ORDER = ['대국지아이에스','내가시스템','더퍼스트아이씨티','새한항업','웨이즈원','대한지리학회'];
-  const orderedEntries = [
-    ...COMPANY_ORDER.filter(n => uploads[n]).map(n => [n, uploads[n]]),
-    ...Object.entries(uploads).filter(([n]) => !COMPANY_ORDER.includes(n))
-  ];
-
-  const textHtml = orderedEntries.map(([company, data]) => {
+  const textHtml = Object.entries(uploads).map(([company, data]) => {
     const rt = data.reportText || {};
     const work = (rt.weeklyWork||'').replace('[입력]','').trim();
-    const plan = (rt.plan||'').replace('[입력]','').trim();
-    if (!work && !plan) return '';
-    const ro = !data.regions || data.regions.length === 0;
-    const badge = ro ? ' <span style="font-size:10px;background:#EEF1F5;color:#6B7686;padding:1px 6px;border-radius:6px;font-weight:700;">📋 보고전용</span>' : '';
-    return '<div class="card" style="margin-bottom:12px;">'
-      + '<div class="card-h">' + company + badge + ' <span class="meta">' + baseDate + '</span></div>'
-      + '<div class="card-pad" style="display:flex;flex-direction:column;gap:12px;">'
-      + (work ? '<div><div style="font-size:11.5px;font-weight:800;color:var(--navy);margin-bottom:5px;">□ 금주 실적</div>'
-              + '<div style="font-size:13px;white-space:pre-wrap;color:var(--text);line-height:1.7;">' + work + '</div></div>' : '')
-      + (plan ? '<div style="border-top:1px solid var(--line);padding-top:10px;"><div style="font-size:11.5px;font-weight:800;color:var(--navy);margin-bottom:5px;">□ 추진계획</div>'
-              + '<div style="font-size:13px;white-space:pre-wrap;color:var(--text);line-height:1.7;">' + plan + '</div></div>' : '')
+    if (!work) return '';
+    return '<div class="card" style="margin-bottom:10px;">'
+      + '<div class="card-h">' + company + ' <span class="meta">' + (data.uploadedAt||'').slice(0,10) + '</span></div>'
+      + '<div class="card-pad">'
+      + '<div style="font-size:11.5px;font-weight:800;color:var(--navy);margin-bottom:6px;">□ 금주 실적</div>'
+      + '<div style="font-size:13px;white-space:pre-wrap;color:var(--text);line-height:1.7;">' + work + '</div>'
       + '</div></div>';
   }).join('');
-  $('#weeklyTextReports').innerHTML = textHtml || '<div class="empty" style="font-size:13px;color:var(--muted);padding:10px 0;">업체별 보고 내용이 없습니다 (템플릿 파일 업로드 후 표시됩니다)</div>';
+  $('#weeklyTextReports').innerHTML = textHtml || '<div class="empty" style="font-size:13px;color:var(--muted);padding:10px 0;">업체별 보고 내용이 없습니다 (템플릿 시트1 금주실적이 여기 표시됩니다)</div>';
+
+  // 추진계획 → 차주 계획 칸에 자동 표시 (비어있을 때만)
+  // 차주 계획 auto-fill은 loadNote 이후에 처리 (아래 참고)
+  const _planFromTemplate = Object.entries(uploads).map(([co, d]) => {
+    const p = ((d.reportText||{}).plan||'').replace('[입력]','').trim();
+    return p ? ('[' + co + ']\n' + p) : '';
+  }).filter(Boolean).join('\n\n');
 
   const top = [...snap.regions].sort((a,b)=>b.thisWeek-a.thisWeek).filter(r=>r.thisWeek>0).slice(0,15);
   $('#weeklyTop').innerHTML = top.length ? `<table class="dt"><thead><tr>
@@ -142,7 +267,12 @@ async function renderWeekly(date) {
     ${top.map(r=>`<tr><td>${r.sido}</td><td class="left">${r.sigungu}</td><td>${r.vendor||'-'}</td><td>${fmt(r.thisWeek)}</td><td>${fmt(r.cumulative)}</td><td>${pct(r.progress)}</td></tr>`).join('')}
     </tbody></table>` : `<div class="empty">금주 점검 실적이 입력된 지역이 없습니다</div>`;
 
-  loadNote('wkRound','wk-round',date);
+  loadNote('wkIssue','wk-issue',date); loadNote('wkPlan','wk-plan',date); loadNote('wkRound','wk-round',date);
+  // loadNote 이후 textarea가 비어있으면 템플릿의 추진계획으로 채움
+  const wkPlanEl = $('#wkPlan');
+  if (wkPlanEl && !wkPlanEl.value && _planFromTemplate) {
+    wkPlanEl.value = _planFromTemplate;
+  }
   $('#appSub').textContent = `기준일자 ${snap.baseDate} · ${snap.weekStart||''} ~ ${snap.weekEnd||''}`;
 }
 
@@ -169,7 +299,7 @@ async function renderMonthly(month) {
   const t = totals(lastSnap.regions);
   const monthThisWeekSum = lastSnap ? (t.cumulative - totals(firstSnap.regions).cumulative + totals(firstSnap.regions).thisWeek) : 0;
 
-  $('#monthLastDateTag').textContent = `기준월 ${month}`;
+  $('#monthLastDateTag').textContent = `기준일자 ${lastDate}`;
   $('#monthlyKpis').innerHTML = [
     kpiCard('전체 대상건수', fmt(t.target)),
     kpiCard('월말 누적점검', fmt(t.cumulative), 'ok'),
@@ -193,37 +323,54 @@ async function renderMonthly(month) {
   }
   $('#monthWeeksBars').innerHTML = rows.map(r => barRow(r.date, r.t.progress)).join('') || `<div class="empty">데이터가 없습니다</div>`;
 
-  // 월간 주요 실적 및 이슈 / 월간 추진계획 — 각 주차 템플릿의 기타/추진계획 취합
+  _currentMonth = month;
+
+  // 월간 주요 실적 및 이슈 - 각 주차 템플릿의 기타 항목 취합
+  const MO_ORDER = ['대국지아이에스','내가시스템','더퍼스트아이씨티','새한항업','웨이즈원','대한지리학회'];
   const moUploads = {};
   for (const w of weeksInMonth) {
     const ws = await DataLayer.getWeek(w.date);
     if (!ws) continue;
     Object.entries(ws.companyUploads || {}).forEach(([co, d]) => {
-      if (!moUploads[co]) moUploads[co] = { note: [], plan: [] };
+      if (!moUploads[co]) moUploads[co] = { notes: [], lastPlan: '' };
       const rt = d.reportText || {};
       const note = (rt.note||'').replace('[입력]','').trim();
       const plan = (rt.plan||'').replace('[입력]','').trim();
-      if (note) moUploads[co].note.push(`[${w.date}] ${note}`);
-      if (plan) moUploads[co].plan.push(`[${w.date}] ${plan}`);
+      if (note) moUploads[co].notes.push('[' + w.date + '] ' + note);
+      if (plan) moUploads[co].lastPlan = plan; // 마지막 주차 덮어쓰기
     });
   }
-  const MO_ORDER = ['대국지아이에스','내가시스템','더퍼스트아이씨티','새한항업','웨이즈원','대한지리학회'];
-  function moCard(entries, keyFn) {
-    const ordered = [...MO_ORDER.filter(n=>entries[n]), ...Object.keys(entries).filter(n=>!MO_ORDER.includes(n))];
-    return ordered.map(co => {
-      const items = keyFn(entries[co]);
-      if (!items.length) return '';
-      const ro = !items; // will never be true, badge via separate check
-      return '<div class="card" style="margin-bottom:10px;">'
-        + '<div class="card-h">' + co + ' <span class="meta">' + month + '</span></div>'
-        + '<div class="card-pad"><div style="font-size:13px;white-space:pre-wrap;color:var(--text);line-height:1.8;">' + items.join('\n\n') + '</div></div>'
-        + '</div>';
-    }).join('');
-  }
-  const issueHtml = moCard(moUploads, d => d.note);
-  const moPlanHtml = moCard(moUploads, d => d.plan);
-  if ($('#moIssueCards')) $('#moIssueCards').innerHTML = issueHtml || '<div class="empty" style="color:var(--muted);font-size:13px;">월간 이슈 내용이 없습니다 (각 주차 템플릿의 기타 항목)</div>';
-  if ($('#moPlanCards')) $('#moPlanCards').innerHTML = moPlanHtml || '<div class="empty" style="color:var(--muted);font-size:13px;">월간 추진계획이 없습니다 (각 주차 템플릿의 추진계획 항목)</div>';
+  const ordered = [...MO_ORDER.filter(n=>moUploads[n]), ...Object.keys(moUploads).filter(n=>!MO_ORDER.includes(n))];
+
+  // 월간 주요 실적 및 이슈 카드
+  const issueHtml = ordered.map(co => {
+    const items = moUploads[co].notes;
+    if (!items.length) return '';
+    return '<div class="card" style="margin-bottom:10px;">'
+      + '<div class="card-h">' + co + ' <span class="meta">' + month + '</span></div>'
+      + '<div class="card-pad"><div style="font-size:13px;white-space:pre-wrap;color:var(--text);line-height:1.8;">' + items.join('\n\n') + '</div></div>'
+      + '</div>';
+  }).join('');
+  if ($('#moIssueCards')) $('#moIssueCards').innerHTML = issueHtml || '<div class="empty" style="color:var(--muted);font-size:13px;">월간 이슈 없음 (각 주차 템플릿의 기타 항목 자동 취합)</div>';
+
+  // 월간 추진계획 - 참고용: 마지막 주차 추진계획
+  const refHtml = ordered.map(co => {
+    const plan = moUploads[co].lastPlan;
+    if (!plan) return '';
+    return '<div class="card" style="margin-bottom:8px;border-left:3px solid #C7D6E6;">'
+      + '<div class="card-h" style="font-size:12px;">' + co + ' <span class="meta" style="color:var(--muted);">참고 · 마지막 주차 추진계획</span></div>'
+      + '<div class="card-pad"><div style="font-size:12.5px;white-space:pre-wrap;color:var(--muted);line-height:1.7;">' + plan + '</div></div>'
+      + '</div>';
+  }).join('');
+  if ($('#moPlanRefCards')) $('#moPlanRefCards').innerHTML = refHtml || '';
+
+  // PM 종합 계획 로드
+  const savedPlan = await loadMoPlan(month);
+  const display = $('#moPlanDisplay');
+  const input = $('#moPlanInput');
+  if (display) display.textContent = savedPlan || '(아직 입력된 내용이 없습니다)';
+  if (input) input.value = savedPlan || '';
+  applyPinState();
 }
 
 /* ---- mode switch ---- */
@@ -239,7 +386,117 @@ $('#printBtn').addEventListener('click', ()=> window.print());
 
 (async function init(){
   renderNav('report');
+
+/* ---- PIN 관리자 잠금 ---- */
+let _adminPin = null; // config에서 로드
+let _pinUnlocked = sessionStorage.getItem('kaba_admin_unlocked') === '1';
+let _currentMonth = null;
+
+async function loadAdminPin() {
+  try {
+    const res = await fetch('data/config.json', {cache:'no-store'});
+    const cfg = await res.json();
+    _adminPin = cfg.adminPin || null;
+  } catch {}
+}
+
+function togglePin() {
+  if (_pinUnlocked) {
+    // 잠금
+    _pinUnlocked = false;
+    sessionStorage.removeItem('kaba_admin_unlocked');
+    applyPinState();
+  } else {
+    // 잠금 해제 시도
+    const input = prompt('관리자 PIN을 입력하세요:');
+    if (!input) return;
+    if (input === _adminPin) {
+      _pinUnlocked = true;
+      sessionStorage.setItem('kaba_admin_unlocked', '1');
+      applyPinState();
+    } else {
+      alert('PIN이 올바르지 않습니다.');
+    }
+  }
+}
+
+function applyPinState() {
+  const btn = $('#pinLockBtn');
+  const label = $('#pinStatusLabel');
+  const display = $('#moPlanDisplay');
+  const input = $('#moPlanInput');
+  const saveBtn = $('#moPlanSaveBtn');
+  if (!btn) return;
+  if (_pinUnlocked) {
+    btn.textContent = '🔓';
+    btn.title = '관리자 잠금 (클릭하여 잠금)';
+    if (label) { label.textContent = '(관리자 모드)'; label.style.color = 'var(--green)'; }
+    if (display) display.classList.add('hidden');
+    if (input) { input.classList.remove('hidden'); input.focus(); }
+    if (saveBtn) saveBtn.classList.remove('hidden');
+  } else {
+    btn.textContent = '🔒';
+    btn.title = '관리자 잠금 해제 (PIN 필요)';
+    if (label) { label.textContent = '(잠김 · 관리자만 입력)'; label.style.color = 'var(--red)'; }
+    if (display) display.classList.remove('hidden');
+    if (input) input.classList.add('hidden');
+    if (saveBtn) saveBtn.classList.add('hidden');
+  }
+}
+
+async function saveMoPlan() {
+  const month = _currentMonth;
+  if (!month) return;
+  const val = ($('#moPlanInput')||{}).value || '';
+  // localStorage 저장
+  localStorage.setItem('kaba_moPlan_' + month, val);
+  // GitHub 저장 (PAT 있을 때)
+  const pat = localStorage.getItem('kaba_gh_pat');
+  if (pat) {
+    const btn = $('#moPlanSaveBtn');
+    if (btn) btn.textContent = '저장 중…';
+    try {
+      const path = 'data/mo-plan/' + month + '.json';
+      const apiUrl = 'https://api.github.com/repos/dggis/addr.chk.2026/contents/' + path;
+      const hdrs = {Authorization:'Bearer '+pat, Accept:'application/vnd.github+json', 'Content-Type':'application/json'};
+      const ex = await fetch(apiUrl+'?ref=main', {headers:hdrs}).then(r=>r.ok?r.json():null).catch(()=>null);
+      const body = {message:'chore: 월간 추진계획 ' + month, content: btoa(unescape(encodeURIComponent(JSON.stringify({month, plan:val, updatedAt:new Date().toISOString()})))), branch:'main'};
+      if (ex?.sha) body.sha = ex.sha;
+      await fetch(apiUrl, {method:'PUT', headers:hdrs, body:JSON.stringify(body)});
+      if (btn) { btn.textContent = '✅ 저장됨'; setTimeout(()=>btn.textContent='GitHub 저장', 2000); }
+    } catch(e) {
+      if (btn) { btn.textContent = 'GitHub 저장'; }
+      alert('GitHub 저장 실패: ' + e.message);
+    }
+  } else {
+    alert('이 기기에 저장됐습니다 (GitHub 저장은 PAT 등록 필요)');
+  }
+  // display 업데이트
+  const display = $('#moPlanDisplay');
+  if (display) display.textContent = val;
+}
+
+async function loadMoPlan(month) {
+  // localStorage 우선
+  const local = localStorage.getItem('kaba_moPlan_' + month);
+  if (local !== null) return local;
+  // GitHub에서 로드 시도
+  const pat = localStorage.getItem('kaba_gh_pat');
+  if (pat) {
+    try {
+      const res = await fetch('https://api.github.com/repos/dggis/addr.chk.2026/contents/data/mo-plan/' + month + '.json?ref=main',
+        {headers:{Authorization:'Bearer '+pat, Accept:'application/vnd.github+json'}});
+      if (res.ok) {
+        const d = await res.json();
+        const obj = JSON.parse(atob(d.content.replace(/\n/g,'')));
+        return obj.plan || '';
+      }
+    } catch {}
+  }
+  return '';
+}
   const sel = $('#weekSelect');
+  await loadAdminPin(); // config에서 PIN 로드
   const { weeks, current } = await buildWeekSelector(sel, renderWeekly);
   ALL_WEEKS = weeks;
   if (weeks.length === 0) { $('#emptyState').classList.remove('hidden'); return; }
